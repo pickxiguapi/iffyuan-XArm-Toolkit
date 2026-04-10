@@ -42,7 +42,10 @@ iffyuan-XArm-Toolkit/
 │   │   └── spacemouse.py       # SpacemouseAgent — 缩放/重映射/夹爪切换
 │   ├── collect/            # 数据采集
 │   │   └── collector.py        # Collector — env + cameras + teleop → Zarr
-│   ├── deploy/             # VLA 模型部署与评测（待开发）
+│   ├── deploy/             # VLA Server/Client 部署
+│   │   ├── msgpack_numpy.py    # ndarray ↔ msgpack 序列化
+│   │   ├── server.py           # VLAServer — WebSocket 异步推理服务
+│   │   └── client.py           # VLAClient — 同步客户端（自动重连）
 │   └── utils/
 │       └── logger.py           # 统一日志
 ├── configs/                # 配置文件（YAML）
@@ -52,9 +55,13 @@ iffyuan-XArm-Toolkit/
 │       ├── plug.yaml
 │       └── stamp.yaml
 ├── scripts/                # 入口脚本
+│   ├── test_cameras.py         # 相机验证
+│   ├── test_env.py             # 机械臂环境验证（交互式）
+│   ├── web_control_demo.py     # Web 键盘控制 Demo
 │   ├── teleop_demo.py          # SpaceMouse 遥操作（不保存数据）
 │   ├── collect_data.py         # 数据采集入口
-│   └── web_control_demo.py     # Web 键盘控制 Demo
+│   ├── deploy_vla.py           # VLA 机器人端部署
+│   └── start_server.py         # VLA GPU 端服务（openpi Pi0.5）
 ├── tests/                  # 测试（mock 硬件）
 ├── pyproject.toml
 └── requirements.txt
@@ -68,16 +75,23 @@ obs = env.reset()           # → dict: cart_pos, servo_angle, ext_force, goal_p
 obs = env.step(action, gripper_action, speed)
 
 # Camera
-cam = RealsenseEnv(serial, mode="rgbd")
-obs = cam.step()            # → dict: rgbd, intrinsic_matrix, depth_scale
+cam = RealsenseEnv(serial, mode="rgbd")  # mode: "rgb" | "rgbd" | "pcd"
+obs = cam.step()            # → dict: rgb/rgbd, intrinsic_matrix, depth_scale
 
 # Teleop
 agent = SpacemouseAgent(config=SpacemouseConfig(...))
 action, gripper = agent.act(obs)  # → (6D delta, int gripper_pos)
 
 # Collect
-collector = Collector(env, cam_arm, cam_fix, agent, dataset_path, task_config, num_episodes)
+collector = Collector(env, cam_arm, cam_fix, agent, dataset_path, task_config,
+                      num_episodes, cam_mode="rgbd")
 collector.run()             # 阻塞式采集循环
+
+# Deploy
+client = VLAClient(host, port)
+result = client.predict(images, instruction, state)  # → {"actions": np.ndarray}
+server = VLAServer(policy, host, port, metadata)
+server.run()                # 阻塞式 WebSocket 服务
 ```
 
 ## 数据采集流程
@@ -127,5 +141,7 @@ pip install -e ".[dev]"   # 额外安装 pytest / ruff（开发用）
 | pyyaml | 配置文件解析 |
 | pyspacemouse | SpaceMouse 输入 |
 | hidapi | USB HID（SpaceMouse 底层） |
+| websockets | VLA Server/Client 通信 |
+| msgpack | 高效二进制序列化（含 ndarray） |
 
-> Deploy 相关依赖（torch / transformers 等）不在默认依赖中，按需另行安装。
+> Deploy 相关依赖（torch / transformers / openpi 等）不在默认依赖中，按需另行安装。

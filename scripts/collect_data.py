@@ -74,6 +74,10 @@ def parse_args():
     p.add_argument("--cam-mode", type=str, default="rgbd",
                    choices=["rgb", "rgbd", "pcd"],
                    help="Camera mode: rgb, rgbd (default), pcd")
+    p.add_argument("--save-video", action="store_true",
+                   help="Save per-episode MP4 videos for review")
+    p.add_argument("--video-fps", type=float, default=15.0,
+                   help="FPS for saved videos (default 15)")
     p.add_argument("--trans-scale", type=float, default=5.0,
                    help="SpaceMouse translation sensitivity")
     p.add_argument("--rot-scale", type=float, default=0.004,
@@ -131,6 +135,8 @@ def main():
         num_episodes=args.episodes,
         cam_mode=cam_mode,
         image_size=img_size,
+        save_video=args.save_video,
+        video_fps=args.video_fps,
         warmup_time=collect_cfg.get("warmup_time", 1.0),
     )
 

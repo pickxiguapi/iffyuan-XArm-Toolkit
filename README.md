@@ -150,6 +150,9 @@ python scripts/collect_data.py --task plug --episodes 10 --dataset datasets/plug
 
 # 需要力传感器数据时手动开启
 python scripts/collect_data.py --force --dataset datasets/force_demo.zarr
+
+# 保存视频方便回看（每个 episode 生成两个 MP4: arm + fix）
+python scripts/collect_data.py --save-video --dataset datasets/demo.zarr
 ```
 
 | 操作 | 说明 |

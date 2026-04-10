@@ -171,6 +171,11 @@ class Collector:
         - ``"pcd"``:  save RGB + depth (point cloud computed from RealsenseEnv but not stored)
     image_size : tuple
         Target (W, H) for saved images (default 320×240).
+    save_video : bool
+        If True, save per-episode MP4 videos for arm and fix cameras
+        alongside the dataset (e.g. ``datasets/demo_ep0_arm.mp4``).
+    video_fps : float
+        FPS for saved videos (default 15).
     warmup_time : float
         Seconds to wait after init before first episode.
     """
@@ -186,6 +191,8 @@ class Collector:
         num_episodes: int = 3,
         cam_mode: str = "rgbd",
         image_size: tuple[int, int] = (320, 240),
+        save_video: bool = False,
+        video_fps: float = 15.0,
         warmup_time: float = 1.0,
     ):
         self.env = env
@@ -198,6 +205,8 @@ class Collector:
         self.num_episodes = num_episodes
         self.cam_mode = cam_mode
         self.image_w, self.image_h = image_size
+        self.save_video = save_video
+        self.video_fps = video_fps
         self.warmup_time = warmup_time
 
         self._save_depth = cam_mode in ("rgbd", "pcd")
@@ -326,6 +335,18 @@ class Collector:
 
         print(f"\r\n  Recording episode {current_ep}... (Enter to stop)\r\n")
 
+        # --- Video writers (optional) ---
+        vw_arm = None
+        vw_fix = None
+        if self.save_video:
+            # Derive video path from dataset path, e.g. datasets/demo_ep0_arm.mp4
+            base = os.path.splitext(self.dataset_path)[0]
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            size = (self.image_w, self.image_h)
+            vw_arm = cv2.VideoWriter(f"{base}_ep{current_ep}_arm.mp4", fourcc, self.video_fps, size)
+            vw_fix = cv2.VideoWriter(f"{base}_ep{current_ep}_fix.mp4", fourcc, self.video_fps, size)
+            logger.info("Saving video: %s_ep%d_{arm,fix}.mp4", base, current_ep)
+
         # --- Record ---
         buffer: dict[str, list] = {
             "rgb_arm": [], "rgb_fix": [],
@@ -372,6 +393,12 @@ class Collector:
 
             rgb_arm = cv2.resize(rgb_arm, (self.image_w, self.image_h))
             rgb_fix = cv2.resize(rgb_fix, (self.image_w, self.image_h))
+
+            # Write video frames (RGB → BGR for OpenCV)
+            if vw_arm is not None:
+                vw_arm.write(cv2.cvtColor(rgb_arm, cv2.COLOR_RGB2BGR))
+            if vw_fix is not None:
+                vw_fix.write(cv2.cvtColor(rgb_fix, cv2.COLOR_RGB2BGR))
 
             # Extract depth (if saving)
             if self._save_depth:
@@ -429,6 +456,12 @@ class Collector:
                 )
 
         # --- Save buffer ---
+        # Release video writers
+        if vw_arm is not None:
+            vw_arm.release()
+        if vw_fix is not None:
+            vw_fix.release()
+
         if steps == 0:
             logger.warning("Episode %d: 0 steps, skipping save.", current_ep)
             return
