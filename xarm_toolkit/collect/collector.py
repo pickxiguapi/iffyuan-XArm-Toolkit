@@ -334,13 +334,15 @@ class Collector:
         vw_arm = None
         vw_fix = None
         if self.save_video:
-            # Derive video path from dataset path, e.g. datasets/demo_ep0_arm.mp4
+            # Save videos to a subfolder: datasets/demo_videos/ep0_arm.mp4
             base = os.path.splitext(self.dataset_path)[0]
+            video_dir = f"{base}_videos"
+            os.makedirs(video_dir, exist_ok=True)
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             size = (self.image_w, self.image_h)
-            vw_arm = cv2.VideoWriter(f"{base}_ep{current_ep}_arm.mp4", fourcc, self.video_fps, size)
-            vw_fix = cv2.VideoWriter(f"{base}_ep{current_ep}_fix.mp4", fourcc, self.video_fps, size)
-            logger.info("Saving video: %s_ep%d_{arm,fix}.mp4", base, current_ep)
+            vw_arm = cv2.VideoWriter(f"{video_dir}/ep{current_ep}_arm.mp4", fourcc, self.video_fps, size)
+            vw_fix = cv2.VideoWriter(f"{video_dir}/ep{current_ep}_fix.mp4", fourcc, self.video_fps, size)
+            logger.info("Saving video to: %s/ep%d_{arm,fix}.mp4", video_dir, current_ep)
 
         # --- Record ---
         buffer: dict[str, list] = {
