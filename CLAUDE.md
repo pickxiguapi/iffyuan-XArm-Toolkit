@@ -145,3 +145,6 @@ pip install -e ".[dev]"   # 额外安装 pytest / ruff（开发用）
 | msgpack | 高效二进制序列化（含 ndarray） |
 
 > Deploy 相关依赖（torch / transformers / openpi 等）不在默认依赖中，按需另行安装。
+
+## TODO
+- [ ] **Collector 固定采集频率**：加 `--hz` 参数（如 10Hz），循环末尾 sleep 补齐周期。建议 VLA 训练数据限速 10~15Hz 和部署推理频率对齐，力控任务可不限速或 20Hz+。方案见对话记录。
