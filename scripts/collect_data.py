@@ -2,14 +2,14 @@
 """Data collection entry point.
 
 Usage:
-    # 默认任务，采集 3 个 episode
+    # 默认采集 rgbd，3 个 episode
     python scripts/collect_data.py --dataset datasets/demo.zarr
 
-    # 指定任务配置 + episode 数量
-    python scripts/collect_data.py --task plug --episodes 10 --dataset datasets/plug.zarr
+    # 指定任务初始偏移
+    python scripts/collect_data.py --start-bias 0 0 -200 --dataset datasets/plug.zarr
 
-    # 无力传感器模式
-    python scripts/collect_data.py --no-force --dataset datasets/test.zarr
+    # 带随机偏移 + 夹爪始终闭合（stamp 类任务）
+    python scripts/collect_data.py --start-bias 0 0 -270 --gripper-closed --dataset datasets/stamp.zarr
 
 键盘控制:
     Space   — 开始录制当前 episode
@@ -25,9 +25,6 @@ SpaceMouse:
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-
-import yaml
 
 from xarm_toolkit.env.xarm_env import XArmEnv
 from xarm_toolkit.env.realsense_env import RealsenseEnv
@@ -37,79 +34,88 @@ from xarm_toolkit.utils.logger import get_logger
 
 logger = get_logger("collect_data")
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-CONFIGS_DIR = PROJECT_ROOT / "configs"
-
-
-def load_task_config(task_name: str) -> dict:
-    """Load task config from configs/tasks/<task_name>.yaml."""
-    task_file = CONFIGS_DIR / "tasks" / f"{task_name}.yaml"
-    if not task_file.exists():
-        logger.warning("Task config '%s' not found, using default.", task_name)
-        task_file = CONFIGS_DIR / "tasks" / "default.yaml"
-    with open(task_file) as f:
-        return yaml.safe_load(f) or {}
-
-
-def load_hardware_config() -> dict:
-    """Load hardware config from configs/hardware.yaml."""
-    hw_file = CONFIGS_DIR / "hardware.yaml"
-    if not hw_file.exists():
-        logger.warning("hardware.yaml not found, using defaults.")
-        return {}
-    with open(hw_file) as f:
-        return yaml.safe_load(f) or {}
+# 硬件常量
+XARM_IP = "192.168.31.232"
+CAM_ARM_SERIAL = "327122075644"  # D435i
+CAM_FIX_SERIAL = "f1271506"      # L515
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="XArm6 data collection")
+
+    # 数据集
     p.add_argument("--dataset", type=str, default="datasets/demo.zarr",
                    help="Zarr dataset path")
-    p.add_argument("--task", type=str, default="default",
-                   help="Task name (loads configs/tasks/<task>.yaml)")
     p.add_argument("--episodes", type=int, default=3,
                    help="Number of episodes to collect")
+
+    # 任务参数（替代 configs/tasks/*.yaml）
+    p.add_argument("--start-bias", type=float, nargs=3, default=[0, 0, 0],
+                   metavar=("X", "Y", "Z"),
+                   help="Initial position offset from Home [x, y, z] in mm (default: 0 0 0)")
+    p.add_argument("--random-bias-x", type=float, nargs=2, default=None,
+                   metavar=("LO", "HI"),
+                   help="Random X offset range per episode, e.g. --random-bias-x -50 70")
+    p.add_argument("--random-bias-y", type=float, nargs=2, default=None,
+                   metavar=("LO", "HI"),
+                   help="Random Y offset range per episode, e.g. --random-bias-y -20 10")
+    p.add_argument("--gripper-closed", action="store_true",
+                   help="Gripper always closed (stamp-like tasks)")
+
+    # 硬件
+    p.add_argument("--ip", type=str, default=XARM_IP,
+                   help="XArm IP address")
     p.add_argument("--force", action="store_true",
                    help="Enable force sensor (default: off)")
+
+    # 相机
     p.add_argument("--cam-mode", type=str, default="rgbd",
                    choices=["rgb", "rgbd", "pcd"],
                    help="Camera mode: rgb, rgbd (default), pcd")
+    p.add_argument("--image-size", type=int, nargs=2, default=[320, 240],
+                   metavar=("W", "H"),
+                   help="Image size for saved data (default: 320 240)")
+
+    # 视频
     p.add_argument("--save-video", action="store_true",
                    help="Save per-episode MP4 videos for review")
     p.add_argument("--video-fps", type=float, default=15.0,
                    help="FPS for saved videos (default 15)")
+
+    # SpaceMouse
     p.add_argument("--trans-scale", type=float, default=5.0,
                    help="SpaceMouse translation sensitivity")
     p.add_argument("--rot-scale", type=float, default=0.004,
                    help="SpaceMouse rotation sensitivity")
+
     return p.parse_args()
 
 
 def main():
     args = parse_args()
 
-    hw_cfg = load_hardware_config()
-    task_cfg = load_task_config(args.task)
-
-    robot_cfg = hw_cfg.get("robot", {})
-    cam_cfg = hw_cfg.get("cameras", {})
-    collect_cfg = hw_cfg.get("collect", {})
+    # --- Build task config from CLI args ---
+    task_cfg = {
+        "start_bias": args.start_bias,
+        "gripper_always_closed": args.gripper_closed,
+    }
+    if args.random_bias_x is not None:
+        task_cfg.setdefault("random_bias", {})["x"] = args.random_bias_x
+    if args.random_bias_y is not None:
+        task_cfg.setdefault("random_bias", {})["y"] = args.random_bias_y
 
     # --- Init env ---
-    use_force = args.force
     env = XArmEnv(
-        addr=robot_cfg.get("addr", "192.168.31.232"),
-        use_force=use_force,
+        addr=args.ip,
+        use_force=args.force,
         action_mode="delta_eef",
         initial_gripper_position=840,
     )
 
-    # --- Init cameras (mode matches --cam-mode) ---
+    # --- Init cameras ---
     cam_mode = args.cam_mode
-    arm_serial = cam_cfg.get("arm", {}).get("serial", "327122075644")
-    fix_serial = cam_cfg.get("fix", {}).get("serial", "f1271506")
-    cam_arm = RealsenseEnv(serial=arm_serial, mode=cam_mode)
-    cam_fix = RealsenseEnv(serial=fix_serial, mode=cam_mode)
+    cam_arm = RealsenseEnv(serial=CAM_ARM_SERIAL, mode=cam_mode)
+    cam_fix = RealsenseEnv(serial=CAM_FIX_SERIAL, mode=cam_mode)
 
     # --- Init SpaceMouse ---
     sm_cfg = SpacemouseConfig(
@@ -118,12 +124,11 @@ def main():
     )
     agent = SpacemouseAgent(config=sm_cfg)
 
-    # --- Image size ---
-    img_size = tuple(collect_cfg.get("image_size", [320, 240]))
-
     # --- Run collector ---
-    logger.info("Task: %s | Episodes: %d | Force: %s | Cam: %s | Dataset: %s",
-                args.task, args.episodes, use_force, cam_mode, args.dataset)
+    logger.info(
+        "Episodes: %d | Force: %s | Cam: %s | Bias: %s | Dataset: %s",
+        args.episodes, args.force, cam_mode, args.start_bias, args.dataset,
+    )
 
     collector = Collector(
         env=env,
@@ -134,10 +139,9 @@ def main():
         task_config=task_cfg,
         num_episodes=args.episodes,
         cam_mode=cam_mode,
-        image_size=img_size,
+        image_size=tuple(args.image_size),
         save_video=args.save_video,
         video_fps=args.video_fps,
-        warmup_time=collect_cfg.get("warmup_time", 1.0),
     )
 
     collector.run()

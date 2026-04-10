@@ -47,12 +47,6 @@ iffyuan-XArm-Toolkit/
 │   │   └── client.py           # VLAClient — 同步客户端（自动重连）
 │   └── utils/
 │       └── logger.py           # 统一日志
-├── configs/                # 配置文件（YAML）
-│   ├── hardware.yaml           # 机械臂IP、相机serial、采集参数
-│   └── tasks/                  # 任务配置（各任务的初始位姿偏移等）
-│       ├── default.yaml
-│       ├── plug.yaml
-│       └── stamp.yaml
 ├── scripts/                # 入口脚本
 │   ├── test_cameras.py         # 相机验证
 │   ├── test_env.py             # 机械臂环境验证（交互式）
@@ -137,7 +131,6 @@ pip install -e ".[dev]"   # 额外安装 pytest / ruff（开发用）
 | numcodecs | Zarr 压缩编解码 |
 | h5py | HDF5 读写 |
 | pyrealsense2 | RealSense 相机驱动 |
-| pyyaml | 配置文件解析 |
 | pyspacemouse | SpaceMouse 输入 |
 | hidapi | USB HID（SpaceMouse 底层） |
 | websockets | VLA Server/Client 通信 |

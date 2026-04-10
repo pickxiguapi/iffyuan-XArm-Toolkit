@@ -139,19 +139,25 @@ python scripts/teleop_demo.py --hz 50 --speed 400
 SpaceMouse 遥操作 + 双相机 + 力传感器 → Zarr 数据集。
 
 ```bash
-# 默认采集 rgbd（RGB + depth 分开存储，默认不采集力）
+# 默认采集 rgbd，3 个 episode
 python scripts/collect_data.py --dataset datasets/demo.zarr
 
-# 只采集 RGB（不需要 depth）
+# 只采集 RGB
 python scripts/collect_data.py --cam-mode rgb --dataset datasets/rgb_only.zarr
 
-# 指定任务 + episode 数量
-python scripts/collect_data.py --task plug --episodes 10 --dataset datasets/plug.zarr
+# 指定任务初始偏移 + episode 数量
+python scripts/collect_data.py --start-bias 0 0 -200 --episodes 10 --dataset datasets/plug.zarr
 
-# 需要力传感器数据时手动开启
+# 带随机偏移（每个 episode 起始位置不同）
+python scripts/collect_data.py --start-bias 0 0 -200 --random-bias-x -50 70 --random-bias-y -20 10 --dataset datasets/plug.zarr
+
+# 夹爪始终闭合（stamp 类任务）
+python scripts/collect_data.py --start-bias 0 0 -270 --gripper-closed --dataset datasets/stamp.zarr
+
+# 启用力传感器
 python scripts/collect_data.py --force --dataset datasets/force_demo.zarr
 
-# 保存视频方便回看（每个 episode 生成两个 MP4: arm + fix）
+# 保存视频回看
 python scripts/collect_data.py --save-video --dataset datasets/demo.zarr
 ```
 
@@ -263,12 +269,6 @@ iffyuan-XArm-Toolkit/
 │   │   └── client.py           # VLAClient — 同步客户端
 │   └── utils/
 │       └── logger.py           # 统一日志
-├── configs/
-│   ├── hardware.yaml           # 硬件配置（IP、serial、采集参数）
-│   └── tasks/                  # 任务配置
-│       ├── default.yaml
-│       ├── plug.yaml
-│       └── stamp.yaml
 ├── scripts/
 │   ├── test_cameras.py         # 相机验证
 │   ├── test_env.py             # 机械臂验证
