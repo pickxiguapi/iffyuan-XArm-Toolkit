@@ -81,8 +81,9 @@ class XArmEnv:
         Max retries for SDK calls before raising an exception.
     """
 
-    # 复位位姿（笛卡尔）和复位关节角，硬编码不暴露为参数
+    # 复位位姿（笛卡尔）
     RESET_POSE = np.array([470, 0, 530, math.pi, 0, -math.pi / 2])
+    # XArm6: 6 关节 + 1 占位（SDK 要求 7 个值，最后一位为占位 0）
     RESET_JOINT_ANGLES = [0, 0, -math.pi / 2, 0, math.pi / 2, math.pi / 2, 0]
 
     def __init__(

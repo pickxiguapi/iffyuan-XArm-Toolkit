@@ -1,0 +1,3 @@
+# 默认任务（无偏移）
+start_bias: [0, 0, 0]
+gripper_always_closed: false

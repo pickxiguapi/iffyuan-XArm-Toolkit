@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xarm-toolkit"
+version = "0.1.0"
+description = "Production-grade XArm 7 robotic arm toolkit: env, teleop & data collection"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+
+dependencies = [
+    "numpy>=1.24",
+    "opencv-python>=4.8",
+    "open3d>=0.17",
+    "pytransform3d>=3.0",
+    "zarr>=2.16",
+    "h5py>=3.9",
+    "pyrealsense2>=2.54",
+    "pyyaml>=6.0",
+    "pyspacemouse>=1.0",
+    "hidapi>=0.14",
+    "websockets>=12.0",
+    "msgpack>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+xarm-collect = "scripts.collect_data:main"
+xarm-viz     = "scripts.visualize:main"
+
+[tool.setuptools.packages.find]
+include = ["xarm_toolkit*"]
+exclude = ["reference*", "xarm*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"

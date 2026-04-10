@@ -1,0 +1,6 @@
+# 插入任务
+start_bias: [0, 0, -200]
+random_bias:
+  x: [-50, 70]
+  y: [-20, 10]
+gripper_always_closed: false
