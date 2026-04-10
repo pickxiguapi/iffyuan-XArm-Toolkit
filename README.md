@@ -76,6 +76,10 @@ python scripts/test_env.py --force
 ```bash
 python scripts/web_control_demo.py          # 真机模式
 python scripts/web_control_demo.py --mock   # mock 模式调试 UI
+
+# 调整速度
+python scripts/web_control_demo.py --step-pos 0.5 --speed 50   # 更慢更精细
+python scripts/web_control_demo.py --step-pos 2 --speed 300    # 快一点
 ```
 
 打开 `http://<机器IP>:8080`
@@ -257,8 +261,3 @@ iffyuan-XArm-Toolkit/
 └── requirements.txt
 ```
 
-## 运行测试
-
-```bash
-python -m pytest tests/ -v
-```
