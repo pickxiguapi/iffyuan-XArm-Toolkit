@@ -35,7 +35,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="SpaceMouse teleop for XArm6")
     p.add_argument("--ip", default="192.168.31.232", help="XArm IP")
     p.add_argument("--force", action="store_true", help="Enable FT sensor")
-    p.add_argument("--speed", type=float, default=1000, help="Cartesian speed (0-2000)")
+    p.add_argument("--speed", type=float, default=400, help="Cartesian speed mm/s (default 400)")
     p.add_argument("--hz", type=float, default=50, help="Control loop frequency")
     p.add_argument("--trans-scale", type=float, default=5.0, help="Translation sensitivity")
     p.add_argument("--rot-scale", type=float, default=0.004, help="Rotation sensitivity")

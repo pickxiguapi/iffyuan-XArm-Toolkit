@@ -20,6 +20,19 @@ git clone https://github.com/pickxiguapi/iffyuan-XArm-Toolkit && cd iffyuan-XArm
 pip install -e .
 ```
 
+## ⚠️ 运动速度 (`speed`) 参数说明
+
+`speed` 是机械臂笛卡尔空间运动速度（单位 mm/s），**直接决定机械臂移动快慢，务必注意安全**。
+
+| 速度 (mm/s) | 级别 | 适用场景 |
+|:-----------:|:----:|---------|
+| **50~100** | 🐢 慢速 | 初次调试、精细操作、接近物体 |
+| **200~400** | 🚶 中速 | **日常遥操作、数据采集（推荐默认 400）** |
+| **500~800** | 🏃 快速 | 空间大范围移动、复位 |
+| **1000+** | ⚡ 极速 | 仅限空旷环境，**新手慎用** |
+
+各脚本 `--speed` 默认值均为 **400 mm/s**，可通过命令行覆盖。
+
 ## 真机验证流程
 
 按以下顺序逐步验证，每一步通过了再往下走。
@@ -74,12 +87,12 @@ python scripts/test_env.py --force
 网页界面 + 双相机画面 + 键盘控制机械臂。
 
 ```bash
-python scripts/web_control_demo.py          # 真机模式
+python scripts/web_control_demo.py          # 真机模式 (默认 speed=400)
 python scripts/web_control_demo.py --mock   # mock 模式调试 UI
 
 # 调整速度
-python scripts/web_control_demo.py --step-pos 0.5 --speed 50   # 更慢更精细
-python scripts/web_control_demo.py --step-pos 2 --speed 300    # 快一点
+python scripts/web_control_demo.py --speed 100                  # 慢速精细操作
+python scripts/web_control_demo.py --step-pos 2 --speed 600     # 大步快速移动
 ```
 
 打开 `http://<机器IP>:8080`
@@ -109,7 +122,7 @@ python scripts/teleop_demo.py --force
 python scripts/teleop_demo.py --trans-scale 3 --rot-scale 0.003
 
 # 自定义频率和速度
-python scripts/teleop_demo.py --hz 50 --speed 500
+python scripts/teleop_demo.py --hz 50 --speed 400
 ```
 
 **终端键盘:**
@@ -126,14 +139,14 @@ python scripts/teleop_demo.py --hz 50 --speed 500
 SpaceMouse 遥操作 + 双相机 + 力传感器 → Zarr 数据集。
 
 ```bash
-# 默认任务，采集 3 个 episode
+# 默认任务，采集 3 个 episode（默认不采集力）
 python scripts/collect_data.py --dataset datasets/demo.zarr
 
 # 指定任务 + episode 数量
 python scripts/collect_data.py --task plug --episodes 10 --dataset datasets/plug.zarr
 
-# 无力传感器
-python scripts/collect_data.py --no-force --dataset datasets/test.zarr
+# 需要力传感器数据时手动开启
+python scripts/collect_data.py --force --dataset datasets/force_demo.zarr
 ```
 
 | 操作 | 说明 |
@@ -179,9 +192,9 @@ python scripts/deploy_vla.py \
 
 | 模式 | `action_mode` | action 含义 | 典型场景 |
 |------|---------------|------------|---------|
-| 增量末端 | `"delta_eef"` | `[dx,dy,dz,dr,dp,dy]` 相对位移 | SpaceMouse 遥操作 |
-| 绝对末端 | `"absolute_eef"` | `[x,y,z,r,p,y]` 目标位姿 | VLA 笛卡尔部署 |
-| 绝对关节 | `"absolute_joint"` | `[j1..j6]` 目标关节角 (rad) | Pi0 关节部署 |
+| 增量末端 | `"delta_eef"` | `[dx,dy,dz,dr,dp,dy]` 相对位移 | SpaceMouse 遥操作/VLA使用 |
+| 绝对末端 | `"absolute_eef"` | `[x,y,z,r,p,y]` 目标位姿 | VLA 使用 |
+| 绝对关节 | `"absolute_joint"` | `[j1..j6]` 目标关节角 (rad) | VLA 关节部署 |
 
 ### Observation 字典
 

@@ -117,7 +117,7 @@ lock = threading.Lock()
 gripper_open = True  # 夹爪当前状态
 STEP_POS = 0.8       # mm per keypress
 STEP_ROT = 0.002     # rad per keypress (~0.11°)
-MOVE_SPEED = 100     # mm/s — 笛卡尔运动速度
+MOVE_SPEED = 400     # mm/s — 笛卡尔运动速度
 
 # Camera frames (JPEG bytes), updated by CameraThread
 cam_frames: dict[str, bytes | None] = {"arm": None, "fix": None}
@@ -660,8 +660,8 @@ def main():
                         help="平移步长 mm (默认 0.8)")
     parser.add_argument("--step-rot", type=float, default=0.002,
                         help="旋转步长 rad (默认 0.002 ≈ 0.11°)")
-    parser.add_argument("--speed", type=float, default=100,
-                        help="笛卡尔运动速度 mm/s (默认 100)")
+    parser.add_argument("--speed", type=float, default=400,
+                        help="笛卡尔运动速度 mm/s (默认 400)")
     args = parser.parse_args()
     args_global = args
 
