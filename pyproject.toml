@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "xarm-toolkit"
 version = "0.1.0"
-description = "Production-grade XArm 7 robotic arm toolkit: env, teleop & data collection"
+description = "Production-grade XArm 6 robotic arm toolkit: env, teleop, data collection & VLA deployment"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
@@ -38,7 +38,7 @@ xarm-viz     = "scripts.visualize:main"
 
 [tool.setuptools.packages.find]
 include = ["xarm_toolkit*"]
-exclude = ["reference*", "xarm*"]
+exclude = ["reference*", "xarm"]
 
 [tool.ruff]
 line-length = 100
