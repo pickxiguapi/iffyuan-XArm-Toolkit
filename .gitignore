@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing / caching
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Dev-only notes
+analysis.md
+
+# Reference code (已迁移到 xarm_toolkit/)
+reference/
+
+# Recordings / data output
+*.bag
+videos/
+force_data/
