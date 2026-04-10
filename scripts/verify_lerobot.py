@@ -48,35 +48,53 @@ def verify(lerobot_path: str, repo_id: str):
     for idx, task in dataset.meta.tasks.items():
         print(f"    [{idx}] {task}")
 
-    # --- 抽样第一帧 ---
+    # --- 抽样第一帧，只打印我们关心的字段 ---
     print(f"\n[INFO] 抽样 frame[0]:")
     sample = dataset[0]
-    for key, value in sample.items():
-        if hasattr(value, "shape"):
-            print(f"  {key:30s} shape={str(value.shape):15s} dtype={value.dtype}")
-        elif hasattr(value, "size"):
-            print(f"  {key:30s} size={value.size} mode={value.mode}")
-        else:
-            print(f"  {key:30s} = {value}")
 
-    # --- 检查关键字段 ---
+    # 我们转换写入的数据字段
+    data_keys = [
+        "observation.image",
+        "observation.wrist_image",
+        "observation.state",
+        "action",
+    ]
+    # LeRobot 自动生成的元数据字段（标量 tensor，不需要关注）
+    meta_keys = {"timestamp", "frame_index", "episode_index", "index", "task_index", "task"}
+
     ok = True
-    for img_key in ["observation.image", "observation.wrist_image"]:
-        if img_key not in sample:
-            print(f"  [FAIL] 缺少 {img_key}")
-            ok = False
 
+    for key in data_keys:
+        if key not in sample:
+            print(f"  [FAIL] 缺少 {key}")
+            ok = False
+            continue
+        value = sample[key]
+        if hasattr(value, "shape"):
+            shape_str = "x".join(str(d) for d in value.shape)
+            print(f"  {key:30s} [{shape_str}] {value.dtype}")
+
+    # state / action 维度检查
     if "observation.state" in sample:
         dim = sample["observation.state"].shape[-1]
-        print(f"\n  observation.state dim = {dim} (期望 7)")
         if dim != 7:
-            print(f"  [WARN] 维度不符")
+            print(f"  [WARN] observation.state dim={dim}, 期望 7")
+            ok = False
 
     if "action" in sample:
         dim = sample["action"].shape[-1]
-        print(f"  action dim = {dim} (期望 7)")
         if dim != 7:
-            print(f"  [WARN] 维度不符")
+            print(f"  [WARN] action dim={dim}, 期望 7")
+            ok = False
+
+    # task 描述
+    if "task" in sample:
+        print(f"  {'task':30s} = {sample['task']}")
+
+    # 打印省略的元数据字段列表
+    skipped = [k for k in sample if k in meta_keys and k != "task"]
+    if skipped:
+        print(f"  (元数据字段省略: {', '.join(skipped)})")
 
     print(f"\n[{'PASS' if ok else 'FAIL'}] 验证完成")
 
