@@ -53,6 +53,8 @@ iffyuan-XArm-Toolkit/
 │   ├── web_control_demo.py     # Web 键盘控制 Demo
 │   ├── teleop_demo.py          # SpaceMouse 遥操作（不保存数据）
 │   ├── collect_data.py         # 数据采集入口
+│   ├── convert_to_lerobot.py   # Zarr → LeRobot v2 数据转换
+│   ├── verify_lerobot.py       # 数据集验证（Zarr / LeRobot）
 │   ├── deploy_vla.py           # VLA 机器人端部署
 │   └── start_server.py         # VLA GPU 端服务（openpi Pi0.5）
 ├── tests/                  # 测试（mock 硬件）
@@ -118,6 +120,7 @@ dataset.zarr/
 ```bash
 pip install -e .          # 或 pip install -r requirements.txt
 pip install -e ".[dev]"   # 额外安装 pytest / ruff（开发用）
+pip install -e ".[lerobot]"  # LeRobot 数据转换依赖（lerobot + Pillow）
 ```
 
 ## 依赖
@@ -137,6 +140,7 @@ pip install -e ".[dev]"   # 额外安装 pytest / ruff（开发用）
 | msgpack | 高效二进制序列化（含 ndarray） |
 
 > Deploy 相关依赖（torch / transformers / openpi 等）不在默认依赖中，按需另行安装。
+> LeRobot 转换依赖（lerobot / Pillow）通过 `pip install -e ".[lerobot]"` 安装，不在默认依赖中。
 
 ## TODO
 - [ ] **Collector 固定采集频率**：加 `--hz` 参数（如 10Hz），循环末尾 sleep 补齐周期。建议 VLA 训练数据限速 10~15Hz 和部署推理频率对齐，力控任务可不限速或 20Hz+。方案见对话记录。

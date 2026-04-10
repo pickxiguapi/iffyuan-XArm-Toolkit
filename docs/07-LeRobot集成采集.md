@@ -1,0 +1,360 @@
+# LeRobot 集成：XArm6 + SpaceMouse 数据采集
+
+> 本文档覆盖：LeRobot 插件安装、SpaceMouse 遥操作采集、CLI 参数详解、数据格式说明、与原有 Zarr 采集的对比。
+
+## 整体架构
+
+```
+LeRobot CLI (lerobot record / teleoperate / replay)
+       ↓ 自动发现插件
+lerobot_robot_xarm6          →  包装 XArmEnv + RealsenseEnv
+lerobot_teleoperator_spacemouse_xarm6  →  包装 SpacemouseAgent
+       ↓ 适配层调用（不改动 xarm_toolkit/）
+xarm_toolkit/env/xarm_env.py      (机械臂控制)
+xarm_toolkit/env/realsense_env.py  (双相机)
+xarm_toolkit/teleop/spacemouse.py  (SpaceMouse 6DOF)
+       ↓
+采集数据 → LeRobot Dataset v2 (Parquet + MP4)
+```
+
+**与原有方案的关系**：这是一套**独立的**数据采集方案。原有的 `scripts/collect_data.py` → Zarr 方案完全不受影响，两者可以共存。
+
+---
+
+## 一、安装
+
+### 1.1 前置条件
+
+确保以下已安装：
+
+```bash
+# 1. xarm-toolkit（本项目主包）
+cd /path/to/iffyuan-XArm-Toolkit
+pip install -e .
+
+# 2. LeRobot（HuggingFace 官方）
+pip install lerobot
+# 或者从源码安装（推荐，版本更新更快）：
+# git clone https://github.com/huggingface/lerobot.git
+# cd lerobot && pip install -e .
+```
+
+### 1.2 安装 LeRobot 插件
+
+```bash
+cd /path/to/iffyuan-XArm-Toolkit/lerobot_xarm6
+pip install -e .
+```
+
+安装后 LeRobot 会**自动发现**两个插件：
+- `lerobot_robot_xarm6` — XArm6 机器人
+- `lerobot_teleoperator_spacemouse_xarm6` — SpaceMouse 遥操作
+
+### 1.3 验证安装
+
+```bash
+# 检查插件是否被 LeRobot 识别
+python -c "
+from lerobot_robot_xarm6 import Xarm6Config
+from lerobot_teleoperator_spacemouse_xarm6 import SpacemouseXarm6Config
+print('✅ Robot plugin:      xarm6')
+print('✅ Teleop plugin:     spacemouse_xarm6')
+print('   Default IP:       ', Xarm6Config().ip_address)
+print('   Default cameras:  ', Xarm6Config().cam_arm_serial, '+', Xarm6Config().cam_fix_serial)
+print('   Default image:    ', f'{Xarm6Config().image_width}x{Xarm6Config().image_height}')
+"
+```
+
+---
+
+## 二、快速开始
+
+### 2.1 遥操作测试（不保存数据）
+
+先测试 SpaceMouse + 机械臂是否正常工作：
+
+```bash
+python -m lerobot.teleoperate \
+  --robot.type=xarm6 \
+  --teleop.type=spacemouse_xarm6
+```
+
+移动 SpaceMouse 应该能看到机械臂跟随运动，左键切换夹爪开/关。
+
+### 2.2 数据采集
+
+```bash
+python -m lerobot.record \
+  --robot.type=xarm6 \
+  --teleop.type=spacemouse_xarm6 \
+  --repo-id=iffyuan/xarm6_pick_place \
+  --num-episodes=10
+```
+
+采集完成后数据自动保存为 **LeRobot Dataset v2** 格式。
+
+### 2.3 回放验证
+
+```bash
+python -m lerobot.replay \
+  --robot.type=xarm6 \
+  --repo-id=iffyuan/xarm6_pick_place \
+  --episode=0
+```
+
+---
+
+## 三、CLI 参数详解
+
+### 3.1 Robot 参数 (`--robot.*`)
+
+所有 Robot 参数通过 `--robot.xxx` 传入，对应 `Xarm6Config` 的字段：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--robot.type` | — | **必填**，固定填 `xarm6` |
+| `--robot.ip_address` | `192.168.31.232` | XArm 控制器 IP 地址 |
+| `--robot.action_mode` | `delta_eef` | 控制模式：`delta_eef` / `absolute_eef` / `absolute_joint` |
+| `--robot.initial_gripper_position` | `840` | 初始夹爪位置（0=闭，840=全开） |
+| `--robot.cam_arm_serial` | `327122075644` | 臂上相机序列号（D435i） |
+| `--robot.cam_fix_serial` | `f1271506` | 固定相机序列号（L515） |
+| `--robot.image_width` | `320` | 采集图像宽度（像素） |
+| `--robot.image_height` | `240` | 采集图像高度（像素） |
+
+### 3.2 Teleoperator 参数 (`--teleop.*`)
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--teleop.type` | — | **必填**，固定填 `spacemouse_xarm6` |
+| `--teleop.translation_scale` | `5.0` | 平移灵敏度（mm/tick） |
+| `--teleop.z_scale` | `None` | Z 轴灵敏度，None 时同 translation_scale |
+| `--teleop.rotation_scale` | `0.004` | 旋转灵敏度（rad/tick） |
+| `--teleop.deadzone` | `0.0` | 死区阈值，低于此值视为 0 |
+| `--teleop.gripper_open_pos` | `840` | 夹爪打开位置 |
+| `--teleop.gripper_close_pos` | `0` | 夹爪关闭位置 |
+
+### 3.3 Record 参数
+
+| 参数 | 说明 |
+|------|------|
+| `--repo-id` | 数据集 ID，格式 `用户名/数据集名`（本地保存和 HF Hub 上传都用这个） |
+| `--num-episodes` | 采集 episode 数量 |
+| `--fps` | 采集帧率（默认由 LeRobot 控制） |
+
+---
+
+## 四、常用采集场景
+
+### 4.1 精细操作（降低灵敏度）
+
+```bash
+python -m lerobot.record \
+  --robot.type=xarm6 \
+  --teleop.type=spacemouse_xarm6 \
+  --teleop.translation_scale=2.5 \
+  --teleop.rotation_scale=0.002 \
+  --teleop.deadzone=0.1 \
+  --repo-id=iffyuan/xarm6_plug \
+  --num-episodes=20
+```
+
+### 4.2 更换机械臂 IP
+
+```bash
+python -m lerobot.record \
+  --robot.type=xarm6 \
+  --robot.ip_address=192.168.1.100 \
+  --teleop.type=spacemouse_xarm6 \
+  --repo-id=iffyuan/xarm6_demo \
+  --num-episodes=5
+```
+
+### 4.3 更高分辨率图像
+
+```bash
+python -m lerobot.record \
+  --robot.type=xarm6 \
+  --robot.image_width=640 \
+  --robot.image_height=480 \
+  --teleop.type=spacemouse_xarm6 \
+  --repo-id=iffyuan/xarm6_hires \
+  --num-episodes=10
+```
+
+### 4.4 关节空间控制模式
+
+```bash
+python -m lerobot.record \
+  --robot.type=xarm6 \
+  --robot.action_mode=absolute_joint \
+  --teleop.type=spacemouse_xarm6 \
+  --repo-id=iffyuan/xarm6_joint \
+  --num-episodes=10
+```
+
+> **注意**：SpaceMouse 输出的是 delta EEF，如果 action_mode 设为 `absolute_joint`，则 Robot 内部仍然通过 EEF delta 控制，只是观测特征中的 action 定义不同。一般遥操作推荐用默认的 `delta_eef`。
+
+---
+
+## 五、数据格式
+
+LeRobot 采集的数据为 **LeRobot Dataset v2** 格式，和原有的 Zarr 格式不同。
+
+### 5.1 目录结构
+
+```
+~/.cache/huggingface/lerobot/iffyuan/xarm6_pick_place/
+├── data/
+│   └── chunk-000/
+│       ├── episode_000000.parquet    # 数值数据（state, action）
+│       ├── episode_000001.parquet
+│       └── ...
+├── videos/
+│   └── chunk-000/
+│       ├── observation.image/        # 固定相机视频（主视角）
+│       │   ├── episode_000000.mp4
+│       │   └── ...
+│       └── observation.wrist_image/  # 臂上相机视频（手腕视角）
+│           ├── episode_000000.mp4
+│           └── ...
+└── meta/
+    ├── info.json                     # 数据集配置（robot_type, fps, features）
+    ├── episodes.jsonl                # Episode 索引
+    └── tasks.jsonl                   # 任务描述
+```
+
+### 5.2 字段映射
+
+与 README 中 Zarr→LeRobot 转换器保持一致的映射规则：
+
+| LeRobot key | 来源 | shape | 说明 |
+|---|---|---|---|
+| `observation.state` | pos(6) + gripper_state(1) | **(7,) float32** | 末端位姿 [x,y,z,r,p,y] (mm/rad) + 夹爪状态 (0=闭/1=开) |
+| `action` | action_delta(6) + gripper_action(1) | **(7,) float32** | SpaceMouse 6D 增量 + 夹爪动作 (0=闭/1=开) |
+| `observation.image` | rgb_fix（固定相机 L515） | **(H, W, 3) uint8** | 主视角 RGB |
+| `observation.wrist_image` | rgb_arm（臂上相机 D435i） | **(H, W, 3) uint8** | 手腕视角 RGB |
+
+### 5.3 Parquet 数据列
+
+每个 episode 的 Parquet 文件包含以下列：
+
+| 列名 | 类型 | 说明 |
+|------|------|------|
+| `index` | int | 全局帧索引 |
+| `episode_index` | int | Episode 编号 |
+| `frame_index` | int | Episode 内帧索引 |
+| `timestamp` | float | 时间戳（秒） |
+| `observation.state` | float32[7] | pos(6) + gripper_state(1) |
+| `observation.image` | — | 固定相机帧（引用 MP4 视频） |
+| `observation.wrist_image` | — | 臂上相机帧（引用 MP4 视频） |
+| `action` | float32[7] | action_delta(6) + gripper_action(1) |
+| `next.done` | bool | 是否 Episode 最后一帧 |
+
+### 5.4 读取数据（Python）
+
+```python
+from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+
+# 加载本地数据集
+dataset = LeRobotDataset("iffyuan/xarm6_pick_place")
+
+# 查看基本信息
+print(f"总 episodes: {dataset.num_episodes}")
+print(f"总帧数: {len(dataset)}")
+print(f"FPS: {dataset.fps}")
+
+# 读取第 0 帧
+frame = dataset[0]
+print(frame.keys())
+# → dict_keys(['observation.state', 'observation.image',
+#              'observation.wrist_image', 'action', ...])
+
+# observation.state 是 (7,) 向量
+state = frame["observation.state"]   # pos(6) + gripper_state(1)
+action = frame["action"]             # delta(6) + gripper_action(1)
+```
+
+---
+
+## 六、观测与动作特征说明
+
+插件注册到 LeRobot 的特征映射如下（与 Pi0.5 等 VLA 模型输入格式对齐）：
+
+### 6.1 Observation Features
+
+| 特征名 | shape | dtype | 说明 |
+|--------|-------|-------|------|
+| `observation.state` | (7,) | float32 | pos(6) + gripper_state(1)，其中 pos = [x,y,z,roll,pitch,yaw]，gripper_state: 0=闭/1=开 |
+| `observation.image` | (240, 320, 3) | uint8 | 固定相机 L515 RGB（主视角） |
+| `observation.wrist_image` | (240, 320, 3) | uint8 | 臂上相机 D435i RGB（手腕视角） |
+
+### 6.2 Action Features
+
+| 特征名 | shape | dtype | 说明 |
+|--------|-------|-------|------|
+| `action` | (7,) | float32 | action_delta(6) + gripper_action(1)，其中 delta = [dx,dy,dz,dr,dp,dy]，gripper_action: 0=闭/1=开 |
+
+### 6.3 夹爪映射
+
+| 原始夹爪位置 | observation.state[6] | action[6] |
+|:---:|:---:|:---:|
+| ≤ 420 | 0.0 (闭合) | 0.0 (关闭) |
+| > 420 | 1.0 (张开) | 1.0 (打开) |
+
+---
+
+## 七、与原有 Zarr 采集方案的对比
+
+| | 原有方案 (`collect_data.py`) | LeRobot 方案 (`lerobot record`) |
+|---|---|---|
+| **数据格式** | Zarr + Blosc 压缩 | Parquet + MP4 视频 |
+| **图像存储** | 原始 uint8 数组 (channel-first) | H.264 视频压缩 |
+| **深度图** | ✅ 支持 (uint16) | ❌ 仅 RGB |
+| **力传感器** | ✅ 支持 (`--force`) | ❌ 不包含 |
+| **数据体积** | 较大（原始像素） | 较小（视频压缩） |
+| **生态** | 本地使用，需自己写 DataLoader | HuggingFace Hub 生态，直接喂训练 |
+| **遥操作** | SpaceMouse 6DOF + 键盘控制 | SpaceMouse 6DOF（通过插件） |
+| **Episode 控制** | 空格开始/Enter 结束 | LeRobot 内置流程 |
+| **增量追加** | ✅ | ✅ |
+| **夹爪录制逻辑** | 左右键独立控制 + gripper_always_closed | 左键切换开/关 |
+
+### 选择建议
+
+- **要训练 LeRobot 支持的策略**（ACT、Diffusion Policy 等）→ 用 `lerobot record`
+- **需要深度图或力传感器数据** → 用原有 `collect_data.py`
+- **两者可以共存**，分别采集互不影响
+
+---
+
+## 八、插件文件说明
+
+```
+lerobot_xarm6/
+├── pyproject.toml                                  # 包配置
+├── lerobot_robot_xarm6/                            # Robot 插件
+│   ├── __init__.py                                 # 导出 Xarm6Config
+│   ├── config_xarm6.py                            # 配置类（IP、相机、分辨率等）
+│   └── xarm6.py                                   # Robot 实现（包装 XArmEnv + RealsenseEnv）
+└── lerobot_teleoperator_spacemouse_xarm6/          # Teleoperator 插件
+    ├── __init__.py                                 # 导出 SpacemouseXarm6Config
+    ├── config_spacemouse_xarm6.py                 # 配置类（灵敏度、死区等）
+    └── spacemouse_xarm6.py                        # Teleoperator 实现（包装 SpacemouseAgent）
+```
+
+**插件发现原理**：LeRobot 启动时通过 `importlib.metadata` 扫描所有已安装包，发现名称以 `lerobot_robot_` 或 `lerobot_teleoperator_` 开头的包后自动导入，触发 `@RobotConfig.register_subclass("xarm6")` 注册。之后 `--robot.type=xarm6` 就能找到对应的类。
+
+---
+
+## 九、常见问题
+
+| 问题 | 排查 |
+|------|------|
+| `Unknown robot type: xarm6` | 确认 `cd lerobot_xarm6 && pip install -e .` 已执行 |
+| `ModuleNotFoundError: xarm_toolkit` | 确认主项目 `pip install -e .` 已执行 |
+| `ModuleNotFoundError: lerobot` | 确认 LeRobot 已安装（`pip install lerobot`） |
+| SpaceMouse 无反应 | `lsusb` 检查 USB 连接；确认 hidapi 已安装 |
+| 相机连接失败 | 先跑 `python scripts/test_cameras.py` 单独验证 |
+| 机械臂连接超时 | 检查 IP 地址和网络，`ping 192.168.31.232` |
+| 图像全黑 | 检查相机序列号是否正确（`--robot.cam_arm_serial=...`） |
+| LeRobot 版本不兼容 | 插件依赖 `lerobot>=0.5`，检查 `pip show lerobot` |
+| action_features 不匹配 | 确保 `--robot.action_mode` 和 `--teleop.type` 一致（默认 delta_eef + spacemouse_xarm6） |

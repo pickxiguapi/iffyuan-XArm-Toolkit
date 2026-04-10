@@ -30,6 +30,10 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.4",
 ]
+lerobot = [
+    "lerobot>=0.1",
+    "Pillow>=10.0",
+]
 
 [project.scripts]
 xarm-collect = "scripts.collect_data:main"
