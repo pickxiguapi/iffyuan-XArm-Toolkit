@@ -57,6 +57,7 @@ class _KeyboardListener:
 def _open_or_create_zarr(
     path: str,
     image_shape: tuple[int, ...] = (3, 240, 320),
+    cam_mode: str = "rgbd",
 ) -> tuple[zarr.Group, zarr.Group, int]:
     """Open existing or create new Zarr dataset.
 
@@ -77,18 +78,19 @@ def _open_or_create_zarr(
             start_ep = 0
         return data, meta, start_ep
 
-    logger.info("Creating new dataset: %s", dataset_path)
+    logger.info("Creating new dataset: %s (cam_mode=%s)", dataset_path, cam_mode)
     ds = zarr.open(dataset_path, "w")
     data = ds.create_group("data")
     meta = ds.create_group("meta")
 
-    # Image compressor: Blosc zstd for RGB images
+    # Image compressor: Blosc zstd
     try:
         from numcodecs import Blosc
         compressor = Blosc(cname="zstd", clevel=3, shuffle=Blosc.BITSHUFFLE)
     except ImportError:
         compressor = None
 
+    # RGB — always stored
     data.require_dataset(
         "rgb_arm", shape=(0, *image_shape), dtype=np.uint8,
         chunks=(1, *image_shape), compressor=compressor,
@@ -97,6 +99,19 @@ def _open_or_create_zarr(
         "rgb_fix", shape=(0, *image_shape), dtype=np.uint8,
         chunks=(1, *image_shape), compressor=compressor,
     )
+
+    # Depth — stored for rgbd / pcd modes
+    if cam_mode in ("rgbd", "pcd"):
+        depth_shape = (1, image_shape[1], image_shape[2])  # (1, H, W)
+        data.require_dataset(
+            "depth_arm", shape=(0, *depth_shape), dtype=np.uint16,
+            chunks=(1, *depth_shape), compressor=compressor,
+        )
+        data.require_dataset(
+            "depth_fix", shape=(0, *depth_shape), dtype=np.uint16,
+            chunks=(1, *depth_shape), compressor=compressor,
+        )
+
     data.require_dataset("pos", shape=(0, 6), dtype=np.float32)
     data.require_dataset("force", shape=(0, 6), dtype=np.float32)
     data.require_dataset("action", shape=(0, 6), dtype=np.float32)
@@ -149,6 +164,11 @@ class Collector:
         - ``gripper_always_closed``: bool (for stamp-like tasks)
     num_episodes : int
         Number of episodes to collect in this session.
+    cam_mode : str
+        Camera observation mode: ``"rgb"``, ``"rgbd"`` (default), ``"pcd"``.
+        - ``"rgb"``:  only save RGB images
+        - ``"rgbd"``: save RGB + depth separately
+        - ``"pcd"``:  save RGB + depth (point cloud computed from RealsenseEnv but not stored)
     image_size : tuple
         Target (W, H) for saved images (default 320×240).
     warmup_time : float
@@ -164,6 +184,7 @@ class Collector:
         dataset_path: str = "datasets/demo.zarr",
         task_config: dict | None = None,
         num_episodes: int = 3,
+        cam_mode: str = "rgbd",
         image_size: tuple[int, int] = (320, 240),
         warmup_time: float = 1.0,
     ):
@@ -175,9 +196,11 @@ class Collector:
         self.dataset_path = dataset_path
         self.task_cfg = task_config or {}
         self.num_episodes = num_episodes
+        self.cam_mode = cam_mode
         self.image_w, self.image_h = image_size
         self.warmup_time = warmup_time
 
+        self._save_depth = cam_mode in ("rgbd", "pcd")
         self._gripper_always_closed = self.task_cfg.get("gripper_always_closed", False)
 
     # ------------------------------------------------------------------
@@ -206,7 +229,7 @@ class Collector:
         # Open dataset
         image_shape = (3, self.image_h, self.image_w)
         data, meta, start_ep = _open_or_create_zarr(
-            self.dataset_path, image_shape=image_shape,
+            self.dataset_path, image_shape=image_shape, cam_mode=self.cam_mode,
         )
 
         # Initial reset
@@ -310,6 +333,9 @@ class Collector:
             "gripper_state": [], "gripper_action": [],
             "episode": [],
         }
+        if self._save_depth:
+            buffer["depth_arm"] = []
+            buffer["depth_fix"] = []
 
         goal_gripper = 0
         steps = 0
@@ -334,11 +360,34 @@ class Collector:
             obs_arm = self.cam_arm.step()
             obs_fix = self.cam_fix.step()
 
-            # Extract & resize images
-            rgb_arm = np.asarray(obs_arm["rgbd"].color) if "rgbd" in obs_arm else np.asarray(obs_arm["rgb"])
-            rgb_fix = np.asarray(obs_fix["rgbd"].color) if "rgbd" in obs_fix else np.asarray(obs_fix["rgb"])
+            # Extract RGB
+            if "rgbd" in obs_arm:
+                rgb_arm = np.asarray(obs_arm["rgbd"].color)
+            else:
+                rgb_arm = np.asarray(obs_arm["rgb"])
+            if "rgbd" in obs_fix:
+                rgb_fix = np.asarray(obs_fix["rgbd"].color)
+            else:
+                rgb_fix = np.asarray(obs_fix["rgb"])
+
             rgb_arm = cv2.resize(rgb_arm, (self.image_w, self.image_h))
             rgb_fix = cv2.resize(rgb_fix, (self.image_w, self.image_h))
+
+            # Extract depth (if saving)
+            if self._save_depth:
+                if "rgbd" in obs_arm:
+                    depth_arm = np.asarray(obs_arm["rgbd"].depth).squeeze()  # (H, W)
+                else:
+                    depth_arm = np.zeros((rgb_arm.shape[0], rgb_arm.shape[1]), dtype=np.uint16)
+                if "rgbd" in obs_fix:
+                    depth_fix = np.asarray(obs_fix["rgbd"].depth).squeeze()
+                else:
+                    depth_fix = np.zeros((rgb_fix.shape[0], rgb_fix.shape[1]), dtype=np.uint16)
+
+                depth_arm = cv2.resize(depth_arm, (self.image_w, self.image_h),
+                                       interpolation=cv2.INTER_NEAREST)
+                depth_fix = cv2.resize(depth_fix, (self.image_w, self.image_h),
+                                       interpolation=cv2.INTER_NEAREST)
 
             # Robot step
             obs = self.env.step(action, gripper_action=goal_gripper, speed=100)
@@ -357,6 +406,9 @@ class Collector:
             # Append to buffer
             buffer["rgb_arm"].append(rgb_arm.transpose(2, 0, 1)[None])  # (1, 3, H, W)
             buffer["rgb_fix"].append(rgb_fix.transpose(2, 0, 1)[None])
+            if self._save_depth:
+                buffer["depth_arm"].append(depth_arm[None, None])  # (1, 1, H, W)
+                buffer["depth_fix"].append(depth_fix[None, None])
             buffer["pos"].append(obs["goal_pos"].astype(np.float32)[None])
             buffer["force"].append(np.asarray(force, dtype=np.float32)[None])
             buffer["action"].append(np.asarray(action, dtype=np.float32)[None])

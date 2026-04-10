@@ -139,8 +139,11 @@ python scripts/teleop_demo.py --hz 50 --speed 400
 SpaceMouse 遥操作 + 双相机 + 力传感器 → Zarr 数据集。
 
 ```bash
-# 默认任务，采集 3 个 episode（默认不采集力）
+# 默认采集 rgbd（RGB + depth 分开存储，默认不采集力）
 python scripts/collect_data.py --dataset datasets/demo.zarr
+
+# 只采集 RGB（不需要 depth）
+python scripts/collect_data.py --cam-mode rgb --dataset datasets/rgb_only.zarr
 
 # 指定任务 + episode 数量
 python scripts/collect_data.py --task plug --episodes 10 --dataset datasets/plug.zarr
@@ -222,8 +225,10 @@ python scripts/deploy_vla.py \
 ```
 dataset.zarr/
 ├── data/
-│   ├── rgb_arm        # (N, 3, 240, 320) uint8  Blosc 压缩
-│   ├── rgb_fix        # (N, 3, 240, 320) uint8  Blosc 压缩
+│   ├── rgb_arm        # (N, 3, 240, 320) uint8   — 臂上相机 RGB
+│   ├── rgb_fix        # (N, 3, 240, 320) uint8   — 固定相机 RGB
+│   ├── depth_arm      # (N, 1, 240, 320) uint16  — 臂上相机 depth (rgbd/pcd 模式)
+│   ├── depth_fix      # (N, 1, 240, 320) uint16  — 固定相机 depth (rgbd/pcd 模式)
 │   ├── pos            # (N, 6) float32 — 末端位姿
 │   ├── force          # (N, 6) float32 — 力传感器
 │   ├── action         # (N, 6) float32 — SpaceMouse 动作
@@ -233,6 +238,8 @@ dataset.zarr/
 └── meta/
     └── episode_ends   # (M,) uint32 — 各 episode 的结束索引
 ```
+
+> `--cam-mode rgb` 时不创建 `depth_arm` / `depth_fix`。
 
 ## 项目结构
 

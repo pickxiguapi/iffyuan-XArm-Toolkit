@@ -69,8 +69,11 @@ def parse_args():
                    help="Task name (loads configs/tasks/<task>.yaml)")
     p.add_argument("--episodes", type=int, default=3,
                    help="Number of episodes to collect")
-    p.add_argument("--no-force", action="store_true",
-                   help="Disable force sensor")
+    p.add_argument("--force", action="store_true",
+                   help="Enable force sensor (default: off)")
+    p.add_argument("--cam-mode", type=str, default="rgbd",
+                   choices=["rgb", "rgbd", "pcd"],
+                   help="Camera mode: rgb, rgbd (default), pcd")
     p.add_argument("--trans-scale", type=float, default=5.0,
                    help="SpaceMouse translation sensitivity")
     p.add_argument("--rot-scale", type=float, default=0.004,
@@ -89,7 +92,7 @@ def main():
     collect_cfg = hw_cfg.get("collect", {})
 
     # --- Init env ---
-    use_force = not args.no_force
+    use_force = args.force
     env = XArmEnv(
         addr=robot_cfg.get("addr", "192.168.31.232"),
         use_force=use_force,
@@ -97,11 +100,12 @@ def main():
         initial_gripper_position=840,
     )
 
-    # --- Init cameras ---
+    # --- Init cameras (mode matches --cam-mode) ---
+    cam_mode = args.cam_mode
     arm_serial = cam_cfg.get("arm", {}).get("serial", "327122075644")
     fix_serial = cam_cfg.get("fix", {}).get("serial", "f1271506")
-    cam_arm = RealsenseEnv(serial=arm_serial, mode="rgbd")
-    cam_fix = RealsenseEnv(serial=fix_serial, mode="rgbd")
+    cam_arm = RealsenseEnv(serial=arm_serial, mode=cam_mode)
+    cam_fix = RealsenseEnv(serial=fix_serial, mode=cam_mode)
 
     # --- Init SpaceMouse ---
     sm_cfg = SpacemouseConfig(
@@ -114,8 +118,8 @@ def main():
     img_size = tuple(collect_cfg.get("image_size", [320, 240]))
 
     # --- Run collector ---
-    logger.info("Task: %s | Episodes: %d | Force: %s | Dataset: %s",
-                args.task, args.episodes, use_force, args.dataset)
+    logger.info("Task: %s | Episodes: %d | Force: %s | Cam: %s | Dataset: %s",
+                args.task, args.episodes, use_force, cam_mode, args.dataset)
 
     collector = Collector(
         env=env,
@@ -125,6 +129,7 @@ def main():
         dataset_path=args.dataset,
         task_config=task_cfg,
         num_episodes=args.episodes,
+        cam_mode=cam_mode,
         image_size=img_size,
         warmup_time=collect_cfg.get("warmup_time", 1.0),
     )
