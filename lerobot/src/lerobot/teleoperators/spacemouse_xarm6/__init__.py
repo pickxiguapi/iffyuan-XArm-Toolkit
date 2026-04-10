@@ -1,0 +1,2 @@
+from .config_spacemouse_xarm6 import SpacemouseXarm6Config
+from .spacemouse_xarm6 import SpacemouseXarm6

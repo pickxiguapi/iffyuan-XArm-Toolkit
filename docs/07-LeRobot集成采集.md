@@ -5,10 +5,10 @@
 ## 整体架构
 
 ```
-LeRobot CLI (lerobot record / teleoperate / replay)
-       ↓ 自动发现插件
-lerobot_robot_xarm6          →  包装 XArmEnv + RealsenseEnv
-lerobot_teleoperator_spacemouse_xarm6  →  包装 SpacemouseAgent
+LeRobot CLI (lerobot-record / lerobot-teleoperate / lerobot-replay)
+       ↓ 内置 xarm6 + spacemouse_xarm6 适配器
+lerobot/src/lerobot/robots/xarm6/           →  包装 XArmEnv + RealsenseEnv
+lerobot/src/lerobot/teleoperators/spacemouse_xarm6/  →  包装 SpacemouseAgent
        ↓ 适配层调用（不改动 xarm_toolkit/）
 xarm_toolkit/env/xarm_env.py      (机械臂控制)
 xarm_toolkit/env/realsense_env.py  (双相机)
@@ -32,33 +32,19 @@ xarm_toolkit/teleop/spacemouse.py  (SpaceMouse 6DOF)
 cd /path/to/iffyuan-XArm-Toolkit
 pip install -e .
 
-# 2. LeRobot（HuggingFace 官方）
-pip install lerobot
-# 或者从源码安装（推荐，版本更新更快）：
-# git clone https://github.com/huggingface/lerobot.git
-# cd lerobot && pip install -e .
+# 2. LeRobot（本地源码，已内置 XArm6 + SpaceMouse 适配器）
+cd lerobot && pip install -e . && cd ..
 ```
 
-### 1.2 安装 LeRobot 插件
+### 1.2 验证安装
 
 ```bash
-cd /path/to/iffyuan-XArm-Toolkit/lerobot_xarm6
-pip install -e .
-```
-
-安装后 LeRobot 会**自动发现**两个插件：
-- `lerobot_robot_xarm6` — XArm6 机器人
-- `lerobot_teleoperator_spacemouse_xarm6` — SpaceMouse 遥操作
-
-### 1.3 验证安装
-
-```bash
-# 检查插件是否被 LeRobot 识别
+# 检查 xarm6 是否被 LeRobot 识别
 python -c "
-from lerobot_robot_xarm6 import Xarm6Config
-from lerobot_teleoperator_spacemouse_xarm6 import SpacemouseXarm6Config
-print('✅ Robot plugin:      xarm6')
-print('✅ Teleop plugin:     spacemouse_xarm6')
+from lerobot.robots.xarm6 import Xarm6Config
+from lerobot.teleoperators.spacemouse_xarm6 import SpacemouseXarm6Config
+print('✅ Robot:      xarm6')
+print('✅ Teleop:     spacemouse_xarm6')
 print('   Default IP:       ', Xarm6Config().ip_address)
 print('   Default cameras:  ', Xarm6Config().cam_arm_serial, '+', Xarm6Config().cam_fix_serial)
 print('   Default image:    ', f'{Xarm6Config().image_width}x{Xarm6Config().image_height}')
@@ -74,7 +60,7 @@ print('   Default image:    ', f'{Xarm6Config().image_width}x{Xarm6Config().imag
 先测试 SpaceMouse + 机械臂是否正常工作：
 
 ```bash
-python -m lerobot.teleoperate \
+lerobot-teleoperate \
   --robot.type=xarm6 \
   --teleop.type=spacemouse_xarm6
 ```
@@ -84,7 +70,7 @@ python -m lerobot.teleoperate \
 ### 2.2 数据采集
 
 ```bash
-python -m lerobot.record \
+lerobot-record \
   --robot.type=xarm6 \
   --teleop.type=spacemouse_xarm6 \
   --repo-id=iffyuan/xarm6_pick_place \
@@ -96,7 +82,7 @@ python -m lerobot.record \
 ### 2.3 回放验证
 
 ```bash
-python -m lerobot.replay \
+lerobot-replay \
   --robot.type=xarm6 \
   --repo-id=iffyuan/xarm6_pick_place \
   --episode=0
@@ -148,7 +134,7 @@ python -m lerobot.replay \
 ### 4.1 精细操作（降低灵敏度）
 
 ```bash
-python -m lerobot.record \
+lerobot-record \
   --robot.type=xarm6 \
   --teleop.type=spacemouse_xarm6 \
   --teleop.translation_scale=2.5 \
@@ -161,7 +147,7 @@ python -m lerobot.record \
 ### 4.2 更换机械臂 IP
 
 ```bash
-python -m lerobot.record \
+lerobot-record \
   --robot.type=xarm6 \
   --robot.ip_address=192.168.1.100 \
   --teleop.type=spacemouse_xarm6 \
@@ -172,7 +158,7 @@ python -m lerobot.record \
 ### 4.3 更高分辨率图像
 
 ```bash
-python -m lerobot.record \
+lerobot-record \
   --robot.type=xarm6 \
   --robot.image_width=640 \
   --robot.image_height=480 \
@@ -184,7 +170,7 @@ python -m lerobot.record \
 ### 4.4 关节空间控制模式
 
 ```bash
-python -m lerobot.record \
+lerobot-record \
   --robot.type=xarm6 \
   --robot.action_mode=absolute_joint \
   --teleop.type=spacemouse_xarm6 \
@@ -253,7 +239,7 @@ LeRobot 采集的数据为 **LeRobot Dataset v2** 格式，和原有的 Zarr 格
 ### 5.4 读取数据（Python）
 
 ```python
-from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 # 加载本地数据集
 dataset = LeRobotDataset("iffyuan/xarm6_pick_place")
@@ -305,7 +291,7 @@ action = frame["action"]             # delta(6) + gripper_action(1)
 
 ## 七、与原有 Zarr 采集方案的对比
 
-| | 原有方案 (`collect_data.py`) | LeRobot 方案 (`lerobot record`) |
+| | 原有方案 (`collect_data.py`) | LeRobot 方案 (`lerobot-record`) |
 |---|---|---|
 | **数据格式** | Zarr + Blosc 压缩 | Parquet + MP4 视频 |
 | **图像存储** | 原始 uint8 数组 (channel-first) | H.264 视频压缩 |
@@ -313,35 +299,36 @@ action = frame["action"]             # delta(6) + gripper_action(1)
 | **力传感器** | ✅ 支持 (`--force`) | ❌ 不包含 |
 | **数据体积** | 较大（原始像素） | 较小（视频压缩） |
 | **生态** | 本地使用，需自己写 DataLoader | HuggingFace Hub 生态，直接喂训练 |
-| **遥操作** | SpaceMouse 6DOF + 键盘控制 | SpaceMouse 6DOF（通过插件） |
+| **遥操作** | SpaceMouse 6DOF + 键盘控制 | SpaceMouse 6DOF（通过内置适配器） |
 | **Episode 控制** | 空格开始/Enter 结束 | LeRobot 内置流程 |
 | **增量追加** | ✅ | ✅ |
 | **夹爪录制逻辑** | 左右键独立控制 + gripper_always_closed | 左键切换开/关 |
 
 ### 选择建议
 
-- **要训练 LeRobot 支持的策略**（ACT、Diffusion Policy 等）→ 用 `lerobot record`
+- **要训练 LeRobot 支持的策略**（ACT、Diffusion Policy 等）→ 用 `lerobot-record`
 - **需要深度图或力传感器数据** → 用原有 `collect_data.py`
 - **两者可以共存**，分别采集互不影响
 
 ---
 
-## 八、插件文件说明
+## 八、适配器文件说明
+
+XArm6 和 SpaceMouse 适配器直接内置在本项目的 `lerobot/` 源码中：
 
 ```
-lerobot_xarm6/
-├── pyproject.toml                                  # 包配置
-├── lerobot_robot_xarm6/                            # Robot 插件
-│   ├── __init__.py                                 # 导出 Xarm6Config
-│   ├── config_xarm6.py                            # 配置类（IP、相机、分辨率等）
-│   └── xarm6.py                                   # Robot 实现（包装 XArmEnv + RealsenseEnv）
-└── lerobot_teleoperator_spacemouse_xarm6/          # Teleoperator 插件
-    ├── __init__.py                                 # 导出 SpacemouseXarm6Config
-    ├── config_spacemouse_xarm6.py                 # 配置类（灵敏度、死区等）
-    └── spacemouse_xarm6.py                        # Teleoperator 实现（包装 SpacemouseAgent）
+lerobot/src/lerobot/
+├── robots/xarm6/                              # XArm6 Robot 适配器
+│   ├── __init__.py
+│   ├── config_xarm6.py                        # 配置类（IP、相机、分辨率等）
+│   └── xarm6.py                               # Robot 实现（包装 XArmEnv + RealsenseEnv）
+└── teleoperators/spacemouse_xarm6/            # SpaceMouse Teleoperator 适配器
+    ├── __init__.py
+    ├── config_spacemouse_xarm6.py             # 配置类（灵敏度、死区等）
+    └── spacemouse_xarm6.py                    # Teleoperator 实现（包装 SpacemouseAgent）
 ```
 
-**插件发现原理**：LeRobot 启动时通过 `importlib.metadata` 扫描所有已安装包，发现名称以 `lerobot_robot_` 或 `lerobot_teleoperator_` 开头的包后自动导入，触发 `@RobotConfig.register_subclass("xarm6")` 注册。之后 `--robot.type=xarm6` 就能找到对应的类。
+**注册原理**：`config_xarm6.py` 中使用 `@RobotConfig.register_subclass("xarm6")` 注册到 draccus 的 ChoiceRegistry，同时在 `robots/utils.py` 的工厂函数中加入 `xarm6` 分支。`lerobot-teleoperate --robot.type=xarm6` 即可使用。
 
 ---
 
@@ -349,12 +336,11 @@ lerobot_xarm6/
 
 | 问题 | 排查 |
 |------|------|
-| `Unknown robot type: xarm6` | 确认 `cd lerobot_xarm6 && pip install -e .` 已执行 |
+| `Unknown robot type: xarm6` | 确认 `cd lerobot && pip install -e .` 已执行 |
 | `ModuleNotFoundError: xarm_toolkit` | 确认主项目 `pip install -e .` 已执行 |
-| `ModuleNotFoundError: lerobot` | 确认 LeRobot 已安装（`pip install lerobot`） |
+| `ModuleNotFoundError: lerobot` | 确认 `cd lerobot && pip install -e .` 已执行 |
 | SpaceMouse 无反应 | `lsusb` 检查 USB 连接；确认 hidapi 已安装 |
 | 相机连接失败 | 先跑 `python scripts/test_cameras.py` 单独验证 |
 | 机械臂连接超时 | 检查 IP 地址和网络，`ping 192.168.31.232` |
 | 图像全黑 | 检查相机序列号是否正确（`--robot.cam_arm_serial=...`） |
-| LeRobot 版本不兼容 | 插件依赖 `lerobot>=0.5`，检查 `pip show lerobot` |
 | action_features 不匹配 | 确保 `--robot.action_mode` 和 `--teleop.type` 一致（默认 delta_eef + spacemouse_xarm6） |

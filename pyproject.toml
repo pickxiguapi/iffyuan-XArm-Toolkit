@@ -31,7 +31,7 @@ dev = [
     "ruff>=0.4",
 ]
 lerobot = [
-    "lerobot>=0.1",
+    "lerobot>=0.5",
     "Pillow>=10.0",
 ]
 

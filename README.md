@@ -36,8 +36,8 @@ pip install -e .
 # 开发依赖（pytest / ruff）
 pip install -e ".[dev]"
 
-# LeRobot 数据转换依赖（用于 Zarr → LeRobot 格式转换）
-pip install -e ".[lerobot]"
+# LeRobot（本地源码，已内置 XArm6 + SpaceMouse 插件）
+cd lerobot && pip install -e . && cd ..
 ```
 
 ## ⚠️ 运动速度 (`speed`) 参数说明
@@ -193,9 +193,9 @@ python scripts/collect_data.py --save-video --dataset datasets/demo.zarr
 
 将采集的 Zarr 数据集转换为 [LeRobot v2](https://github.com/huggingface/lerobot) 格式，用于 VLA 模型训练（Pi0.5 等）。
 
-**安装额外依赖:**
+**安装 LeRobot:**
 ```bash
-pip install -e ".[lerobot]"
+cd lerobot && pip install -e . && cd ..
 ```
 
 **转换:**
@@ -335,9 +335,10 @@ iffyuan-XArm-Toolkit/
 │   ├── verify_lerobot.py       # 数据集验证（Zarr / LeRobot）
 │   ├── deploy_vla.py           # VLA 机器人端
 │   └── start_server.py         # VLA GPU 端
-├── lerobot_xarm6/          # LeRobot 插件包（独立安装）
-│   ├── lerobot_robot_xarm6/            # XArm6 Robot 插件
-│   └── lerobot_teleoperator_spacemouse_xarm6/  # SpaceMouse 遥操作插件
+├── lerobot/                # LeRobot 源码（已内置 XArm6 + SpaceMouse 插件）
+│   └── src/lerobot/
+│       ├── robots/xarm6/           # XArm6 Robot 适配器
+│       └── teleoperators/spacemouse_xarm6/  # SpaceMouse 遥操作适配器
 ├── xarm/                   # xarm-python-sdk（勿改）
 ├── tests/                  # 测试（mock 硬件）
 ├── docs/                   # 详细文档
