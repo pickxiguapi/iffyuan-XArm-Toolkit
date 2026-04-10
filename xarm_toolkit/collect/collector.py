@@ -264,6 +264,9 @@ class Collector:
                 current_ep = start_ep + ep_idx
                 self._run_episode(current_ep, ep_idx, data, kb)
 
+                # Incrementally update episode_ends after each episode
+                _compute_episode_ends(data, meta)
+
                 # Reset for next episode
                 if ep_idx < self.num_episodes - 1:
                     logger.info("Resetting for next episode...")
@@ -281,8 +284,7 @@ class Collector:
         finally:
             kb.stop()
 
-        # Compute episode_ends
-        _compute_episode_ends(data, meta)
+        # Final episode_ends already written incrementally above
         logger.info(
             "Done! %d new episodes saved to %s",
             self.num_episodes, self.dataset_path,

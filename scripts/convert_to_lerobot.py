@@ -36,9 +36,41 @@ def _check_deps():
         sys.exit(1)
 
 
-def _get_episode_ranges(meta_group) -> list[tuple[int, int]]:
-    """从 meta/episode_ends 提取各 episode 的 [start, end) 范围."""
-    episode_ends = meta_group["episode_ends"][:]
+def _get_episode_ranges(
+    data_group,
+    meta_group,
+    max_episodes: int | None = None,
+) -> list[tuple[int, int]]:
+    """从 meta/episode_ends 或 data/episode 提取各 episode 的 [start, end) 范围.
+
+    如果 meta/episode_ends 不存在（如采集中途崩溃），会自动从 data/episode
+    推算并写回 meta/episode_ends。
+
+    Parameters
+    ----------
+    max_episodes:
+        只取前 N 个 episode（跳过后面不完整的数据）。
+    """
+    # --- 尝试从 meta 读取，失败则从 data/episode 重建 ---
+    if "episode_ends" in meta_group:
+        episode_ends = meta_group["episode_ends"][:]
+    else:
+        print("[WARN] meta/episode_ends 缺失，从 data/episode 自动重建...")
+        all_ep = data_group["episode"][:]
+        unique_eps = np.unique(all_ep)
+        ends = []
+        running = 0
+        for ep in unique_eps:
+            running += int(np.sum(all_ep == ep))
+            ends.append(running)
+        episode_ends = np.array(ends, dtype=np.uint32)
+        print(f"[INFO] 重建完成: {len(episode_ends)} 个 episode, ends={ends}")
+
+    # --- 限制 episode 数量 ---
+    if max_episodes is not None and max_episodes < len(episode_ends):
+        print(f"[INFO] 只使用前 {max_episodes} / {len(episode_ends)} 个 episode")
+        episode_ends = episode_ends[:max_episodes]
+
     ranges = []
     prev = 0
     for end in episode_ends:
@@ -54,6 +86,7 @@ def convert(
     fps: int = 15,
     robot_type: str = "xarm6",
     task_name: str | None = None,
+    max_episodes: int | None = None,
 ):
     """执行单个 Zarr → LeRobot 转换."""
     import zarr
@@ -78,7 +111,7 @@ def convert(
     image_shape = (H, W, C)
     print(f"[INFO] 图像尺寸: {W}×{H}")
 
-    ep_ranges = _get_episode_ranges(meta)
+    ep_ranges = _get_episode_ranges(data, meta, max_episodes=max_episodes)
     n_eps = len(ep_ranges)
     n_frames = sum(end - start for start, end in ep_ranges)
     print(f"[INFO] Episodes: {n_eps}, 总帧数: {n_frames}")
@@ -191,6 +224,8 @@ def main():
     parser.add_argument("--fps", type=int, default=15, help="帧率 (默认 15)")
     parser.add_argument("--robot-type", default="xarm6", help="机器人类型 (默认 xarm6)")
     parser.add_argument("--task", default=None, help="任务描述 (默认使用 zarr 文件名)")
+    parser.add_argument("--episodes", type=int, default=None,
+                        help="只转换前 N 个 episode (跳过后面不完整的数据)")
 
     args = parser.parse_args()
     _check_deps()
@@ -206,6 +241,7 @@ def main():
         fps=args.fps,
         robot_type=args.robot_type,
         task_name=args.task,
+        max_episodes=args.episodes,
     )
 
 
