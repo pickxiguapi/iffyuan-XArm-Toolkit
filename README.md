@@ -277,7 +277,6 @@ iffyuan-XArm-Toolkit/
 │   ├── collect_data.py         # 数据采集入口
 │   ├── deploy_vla.py           # VLA 机器人端
 │   └── start_server.py         # VLA GPU 端
-├── reference/              # 旧代码参考（只读，勿改）
 ├── xarm/                   # xarm-python-sdk（勿改）
 ├── tests/                  # 测试（mock 硬件）
 ├── pyproject.toml

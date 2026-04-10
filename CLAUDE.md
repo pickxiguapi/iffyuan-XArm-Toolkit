@@ -5,8 +5,8 @@ xarm/ 不能改任何东西，这是SDK
 我这是6自由度的xarm6，别给我瞎说xarm7，记住了，是xarm6
 
 ## 项目目标
-重构 reference/ 中的代码为一套生产级 XArm 机械臂工具包：
-不要改动reference/的代码，有需要可以复制出来
+重构 reference/ 中的代码为一套生产级 XArm 机械臂工具包（reference/ 已删除，迁移完成）：
+不要改动xarm/的代码，这是SDK
 - **Env**: 真机环境（含双 RealSense 相机 observation），兼容力控/位控切换
 - **Teleop**: 3D SpaceMouse 遥操作，用于数据采集
 - **Collect**: 数据采集流程，env + teleop → Zarr 存储
@@ -30,7 +30,6 @@ xarm/ 不能改任何东西，这是SDK
 ## 代码结构
 ```
 iffyuan-XArm-Toolkit/
-├── reference/              # 旧代码，只读参考（勿改）
 ├── xarm/                   # xarm-python-sdk（勿改）
 ├── xarm_toolkit/           # 主 Python 包
 │   ├── __init__.py
