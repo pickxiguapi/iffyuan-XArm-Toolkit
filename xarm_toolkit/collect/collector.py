@@ -307,14 +307,9 @@ class Collector:
             kb.start()
 
         # --- Wait for start (space key) ---
-        # During wait: buttons adjust gripper, but arm stays still
-        goal_gripper = 0
+        # During wait: arm stays still, agent reads SpaceMouse to update gripper
         while True:
-            _action, buttons = self.agent.act()
-            if buttons[0]:
-                goal_gripper = min(goal_gripper + 40, 840)
-            elif buttons[1]:
-                goal_gripper = max(goal_gripper - 40, 0)
+            _action, goal_gripper = self.agent.act()
 
             obs = self.env.step([0, 0, 0, 0, 0, 0], gripper_action=goal_gripper, speed=100)
             self.cam_arm.step()
@@ -358,7 +353,7 @@ class Collector:
             buffer["depth_arm"] = []
             buffer["depth_fix"] = []
 
-        goal_gripper = 0
+        goal_gripper = 0  # will be overwritten by agent.act() each step
         steps = 0
         t_start = time.time()
 
@@ -371,11 +366,7 @@ class Collector:
                 raise KeyboardInterrupt
 
             # SpaceMouse action
-            action, buttons = self.agent.act()
-            if buttons[0]:
-                goal_gripper = 840
-            elif buttons[1]:
-                goal_gripper = 0
+            action, goal_gripper = self.agent.act()
 
             # Camera observations (before step, matches reference)
             obs_arm = self.cam_arm.step()
