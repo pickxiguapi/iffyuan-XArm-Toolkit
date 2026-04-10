@@ -1,0 +1,24 @@
+"""xarm_toolkit.deploy — VLA model server/client for robot deployment."""
+
+from __future__ import annotations
+
+import importlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from xarm_toolkit.deploy.client import VLAClient
+    from xarm_toolkit.deploy.server import VLAServer
+
+__all__ = ["VLAClient", "VLAServer"]
+
+_LAZY_IMPORTS: dict[str, str] = {
+    "VLAClient": "xarm_toolkit.deploy.client",
+    "VLAServer": "xarm_toolkit.deploy.server",
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_IMPORTS:
+        module = importlib.import_module(_LAZY_IMPORTS[name])
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -170,9 +170,14 @@ def handle_key(key: str) -> dict:
 
 def _status(level: str, msg: str) -> dict:
     """Build JSON-serializable status dict."""
-    cp = obs["cart_pos"] if obs else [0] * 6
+    cp = obs["cart_pos"] if obs else np.zeros(6)
+    sa = obs["servo_angle"] if obs else np.zeros(6)
     gp = obs["gripper_position"] if obs else 0
-    return {
+    gpos = obs["goal_pos"] if obs else np.zeros(6)
+    ef = obs.get("ext_force") if obs else None
+    rf = obs.get("raw_force") if obs else None
+
+    result = {
         "level": level,
         "msg": msg,
         "pos": {
@@ -183,9 +188,18 @@ def _status(level: str, msg: str) -> dict:
             "pitch": round(float(math.degrees(cp[4])), 1),
             "yaw": round(float(math.degrees(cp[5])), 1),
         },
+        "joints": [round(float(math.degrees(sa[i])), 1) for i in range(6)],
+        "goal_pos": {
+            "x": round(float(gpos[0]), 1),
+            "y": round(float(gpos[1]), 1),
+            "z": round(float(gpos[2]), 1),
+        },
         "gripper": round(float(np.asarray(gp).item()), 1),
         "gripper_open": gripper_open,
+        "ext_force": [round(float(ef[i]), 2) for i in range(6)] if ef is not None else None,
+        "raw_force": [round(float(rf[i]), 2) for i in range(6)] if rf is not None else None,
     }
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -199,96 +213,128 @@ HTML_PAGE = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>XArm 键盘控制</title>
 <style>
-  :root { --bg: #0a0a0a; --card: #161616; --accent: #3b82f6; --green: #22c55e;
-          --red: #ef4444; --yellow: #eab308; --text: #e4e4e7; --dim: #71717a; }
+  :root { --bg: #0a0a0a; --card: #151515; --card2: #1a1a1a; --accent: #3b82f6;
+          --green: #22c55e; --red: #ef4444; --yellow: #eab308; --orange: #f97316;
+          --text: #e4e4e7; --dim: #71717a; --border: #262626; }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', monospace;
          background: var(--bg); color: var(--text); min-height:100vh;
          display:flex; flex-direction:column; align-items:center;
-         padding: 24px 16px; user-select:none; }
-  h1 { font-size: 18px; font-weight: 600; letter-spacing: 2px;
-       color: var(--accent); margin-bottom: 16px; }
+         padding: 20px 16px; user-select:none; }
 
-  /* Status bar */
-  #status { font-size: 13px; height: 20px; margin-bottom: 16px;
-            color: var(--dim); transition: color .15s; }
-  #status.warn { color: var(--yellow); }
+  /* Header */
+  .header { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  h1 { font-size: 16px; font-weight: 600; letter-spacing: 2px; color: var(--accent); }
+  #status { font-size: 12px; color: var(--dim); padding: 3px 10px;
+            background: var(--card); border-radius: 4px; transition: all .15s; }
+  #status.warn { color: var(--yellow); background: #422006; }
+  .mock-badge { display:inline-block; background:#854d0e; color:#fef08a;
+                padding:2px 8px; border-radius:4px; font-size:11px; margin-left:8px; }
 
-  /* Main two-column layout */
-  .main-layout { display: flex; gap: 28px; align-items: flex-start;
-                 max-width: 1100px; width: 100%; }
-
-  /* Left: camera feeds */
-  .cam-column { display: flex; flex-direction: column; gap: 10px;
-                flex-shrink: 0; }
-  .cam-box { position: relative; }
-  .cam-box img { width: 480px; height: 360px; border-radius: 8px;
-                 background: var(--card); object-fit: cover; display: block; }
+  /* ======== TOP: Camera feeds side by side ======== */
+  .cam-row { display: flex; gap: 12px; margin-bottom: 16px; width: 100%; max-width: 1060px; }
+  .cam-box { flex: 1; position: relative; }
+  .cam-box img { width: 100%; aspect-ratio: 4/3; border-radius: 8px;
+                 background: var(--card); object-fit: cover; display: block;
+                 border: 1px solid var(--border); }
   .cam-label { position: absolute; top: 8px; left: 10px;
-               font-size: 11px; color: #fff; background: rgba(0,0,0,0.55);
-               padding: 2px 8px; border-radius: 4px; }
+               font-size: 10px; color: #fff; background: rgba(0,0,0,0.6);
+               padding: 2px 8px; border-radius: 4px; letter-spacing: 1px; }
 
-  /* Right: controls panel */
-  .ctrl-column { flex: 1; display: flex; flex-direction: column;
-                 align-items: center; }
+  /* ======== MIDDLE: Robot info panel ======== */
+  .info-panel { width: 100%; max-width: 1060px; display: flex; gap: 12px;
+                margin-bottom: 16px; flex-wrap: wrap; }
 
-  /* Pose display */
-  .pose-grid { display: grid; grid-template-columns: repeat(3, 1fr);
-               gap: 8px; margin-bottom: 20px; width: 100%; max-width: 420px; }
-  .pose-cell { background: var(--card); border-radius: 8px; padding: 10px 14px;
-               text-align: center; }
-  .pose-label { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
-  .pose-val   { font-size: 20px; font-weight: 700; }
+  .info-section { background: var(--card); border-radius: 8px; padding: 12px 16px;
+                  border: 1px solid var(--border); flex: 1; min-width: 240px; }
+  .info-title { font-size: 11px; color: var(--accent); font-weight: 600;
+                letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }
 
-  /* Gripper indicator */
-  .gripper-bar { display:flex; align-items:center; gap:10px;
-                 margin-bottom: 24px; font-size: 13px; color: var(--dim); }
-  .gripper-dot { width: 10px; height: 10px; border-radius: 50%; }
+  /* Pose grid (2×3) */
+  .pose-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .pose-cell { background: var(--card2); border-radius: 6px; padding: 8px 10px; text-align: center; }
+  .pose-label { font-size: 10px; color: var(--dim); margin-bottom: 2px; }
+  .pose-val   { font-size: 18px; font-weight: 700; }
+
+  /* Joints row */
+  .joint-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .joint-cell { background: var(--card2); border-radius: 6px; padding: 6px 4px; text-align: center; }
+  .joint-label { font-size: 9px; color: var(--dim); }
+  .joint-val   { font-size: 14px; font-weight: 600; }
+
+  /* Gripper + force row */
+  .status-row { display: flex; gap: 12px; align-items: stretch; }
+  .gripper-box { display: flex; align-items: center; gap: 8px; }
+  .gripper-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
   .gripper-dot.open  { background: var(--green); box-shadow: 0 0 6px var(--green); }
   .gripper-dot.close { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .gripper-text { font-size: 13px; }
+  .gripper-val  { font-size: 20px; font-weight: 700; margin-left: 4px; }
 
-  /* Keyboard layout hint */
-  .key-hint { display: grid; gap: 6px; margin-bottom: 14px; }
-  .key-row  { display: flex; justify-content: center; gap: 6px; }
-  .key { width: 42px; height: 42px; border-radius: 6px; display:flex;
-         align-items:center; justify-content:center; font-size: 14px;
-         font-weight: 600; background: var(--card); border: 1px solid #333;
-         transition: all .08s; }
+  .force-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 6px; }
+  .force-cell { background: var(--card2); border-radius: 4px; padding: 4px; text-align: center; }
+  .force-label { font-size: 9px; color: var(--dim); }
+  .force-val   { font-size: 12px; font-weight: 600; color: var(--orange); }
+
+  /* ======== BOTTOM: Controls ======== */
+  .controls { width: 100%; max-width: 1060px; background: var(--card);
+              border-radius: 8px; padding: 16px; border: 1px solid var(--border); }
+  .ctrl-title { font-size: 11px; color: var(--accent); font-weight: 600;
+                letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase; text-align: center; }
+
+  .ctrl-groups { display: flex; justify-content: center; gap: 32px; flex-wrap: wrap; }
+  .ctrl-group { display: flex; flex-direction: column; align-items: center; }
+  .ctrl-group-label { font-size: 10px; color: var(--dim); margin-bottom: 6px;
+                      letter-spacing: 1px; text-transform: uppercase; }
+
+  .key-hint { display: grid; gap: 4px; }
+  .key-row  { display: flex; justify-content: center; gap: 4px; }
+  .key { width: 44px; height: 44px; border-radius: 6px; display:flex;
+         align-items:center; justify-content:center; font-size: 13px;
+         font-weight: 600; background: var(--card2); border: 1px solid var(--border);
+         transition: all .08s; cursor: pointer; flex-direction: column; line-height: 1.1; }
+  .key:hover { border-color: #444; }
   .key.active { background: var(--accent); border-color: var(--accent);
                 color: #fff; transform: scale(0.93); }
-  .key.wide { width: 120px; }
-  .key-group-label { font-size: 11px; color: var(--dim); text-align: center;
-                     margin: 6px 0 4px; }
+  .key .key-sub { font-size: 8px; color: var(--dim); font-weight: 400; }
+  .key.active .key-sub { color: rgba(255,255,255,0.7); }
+  .key.wide { width: 100px; }
+  .key.action-btn { background: #1a1a2e; border-color: #2a2a4e; }
+  .key.action-btn:hover { border-color: var(--accent); }
+  .key.action-btn.danger { border-color: #7f1d1d; }
+  .key.action-btn.danger:hover { border-color: var(--red); }
 
   /* Footer */
-  .footer { margin-top: auto; padding-top: 20px; font-size: 11px;
-            color: var(--dim); }
-  .mock-badge { display:inline-block; background:#854d0e; color:#fef08a;
-                padding:2px 8px; border-radius:4px; font-size:11px; }
+  .footer { margin-top: 12px; font-size: 10px; color: var(--dim); text-align: center; }
 </style>
 </head>
 <body>
 
-<h1>XARM KEYBOARD CTRL</h1>
-<div id="mode"></div>
-<div id="status">按任意控制键开始 ...</div>
+<!-- Header -->
+<div class="header">
+  <h1>XARM KEYBOARD CTRL</h1>
+  <div id="mode"></div>
+  <div id="status">按任意控制键开始 ...</div>
+</div>
 
-<div class="main-layout">
-
-  <!-- Left: Camera feeds -->
-  <div class="cam-column">
-    <div class="cam-box">
-      <div class="cam-label">ARM (D435i)</div>
-      <img src="/stream/arm" alt="arm camera">
-    </div>
-    <div class="cam-box">
-      <div class="cam-label">FIX (L515)</div>
-      <img src="/stream/fix" alt="fix camera">
-    </div>
+<!-- TOP: Camera feeds -->
+<div class="cam-row">
+  <div class="cam-box">
+    <div class="cam-label">ARM · D435i</div>
+    <img src="/stream/arm" alt="arm camera">
   </div>
+  <div class="cam-box">
+    <div class="cam-label">FIX · L515</div>
+    <img src="/stream/fix" alt="fix camera">
+  </div>
+</div>
 
-  <!-- Right: Controls -->
-  <div class="ctrl-column">
+<!-- MIDDLE: Robot info -->
+<div class="info-panel">
+
+  <!-- Cartesian pose -->
+  <div class="info-section" style="flex:2; min-width:340px;">
+    <div class="info-title">末端位姿 · Cartesian Pose</div>
     <div class="pose-grid">
       <div class="pose-cell"><div class="pose-label">X (mm)</div><div class="pose-val" id="px">—</div></div>
       <div class="pose-cell"><div class="pose-label">Y (mm)</div><div class="pose-val" id="py">—</div></div>
@@ -297,44 +343,112 @@ HTML_PAGE = r"""<!DOCTYPE html>
       <div class="pose-cell"><div class="pose-label">Pitch (°)</div><div class="pose-val" id="pp">—</div></div>
       <div class="pose-cell"><div class="pose-label">Yaw (°)</div><div class="pose-val" id="pw">—</div></div>
     </div>
+  </div>
 
-    <div class="gripper-bar">
+  <!-- Joint angles -->
+  <div class="info-section" style="flex:2; min-width:340px;">
+    <div class="info-title">关节角 · Joint Angles (°)</div>
+    <div class="joint-grid">
+      <div class="joint-cell"><div class="joint-label">J1</div><div class="joint-val" id="j0">—</div></div>
+      <div class="joint-cell"><div class="joint-label">J2</div><div class="joint-val" id="j1">—</div></div>
+      <div class="joint-cell"><div class="joint-label">J3</div><div class="joint-val" id="j2">—</div></div>
+      <div class="joint-cell"><div class="joint-label">J4</div><div class="joint-val" id="j3">—</div></div>
+      <div class="joint-cell"><div class="joint-label">J5</div><div class="joint-val" id="j4">—</div></div>
+      <div class="joint-cell"><div class="joint-label">J6</div><div class="joint-val" id="j5">—</div></div>
+    </div>
+  </div>
+
+  <!-- Gripper + Force -->
+  <div class="info-section" style="flex:1; min-width:200px;">
+    <div class="info-title">夹爪 · Gripper</div>
+    <div class="gripper-box">
       <span class="gripper-dot open" id="gdot"></span>
-      <span id="gtxt">夹爪: 打开 (840)</span>
+      <span class="gripper-text" id="gtxt">打开</span>
+      <span class="gripper-val" id="gval">840</span>
     </div>
-
-    <div class="key-group-label">平移 XYZ</div>
-    <div class="key-hint">
-      <div class="key-row"><div class="key" id="kq">Q↑</div><div class="key" id="kw">W→</div><div class="key" id="ke">E↓</div></div>
-      <div class="key-row"><div class="key" id="ka">A←</div><div class="key" id="ks">S←</div><div class="key" id="kd">D→</div></div>
-    </div>
-    <div class="key-group-label">旋转 RPY</div>
-    <div class="key-hint">
-      <div class="key-row"><div class="key" id="ku">U</div><div class="key" id="ki">I</div><div class="key" id="ko">O</div></div>
-      <div class="key-row"><div class="key" id="kj">J</div><div class="key" id="kk">K</div><div class="key" id="kl">L</div></div>
-    </div>
-    <div class="key-group-label">功能</div>
-    <div class="key-hint">
-      <div class="key-row">
-        <div class="key wide" id="kspace">Space 夹爪</div>
-        <div class="key" id="kr">R</div>
+    <div style="margin-top:12px;">
+      <div class="info-title">外力 · Ext Force</div>
+      <div class="force-grid" id="force-grid">
+        <div class="force-cell"><div class="force-label">Fx</div><div class="force-val" id="f0">—</div></div>
+        <div class="force-cell"><div class="force-label">Fy</div><div class="force-val" id="f1">—</div></div>
+        <div class="force-cell"><div class="force-label">Fz</div><div class="force-val" id="f2">—</div></div>
+        <div class="force-cell"><div class="force-label">Tx</div><div class="force-val" id="f3">—</div></div>
+        <div class="force-cell"><div class="force-label">Ty</div><div class="force-val" id="f4">—</div></div>
+        <div class="force-cell"><div class="force-label">Tz</div><div class="force-val" id="f5">—</div></div>
       </div>
     </div>
   </div>
 
 </div>
 
+<!-- BOTTOM: Controls -->
+<div class="controls">
+  <div class="ctrl-title">键盘控制 · Keyboard Controls</div>
+  <div class="ctrl-groups">
+
+    <!-- Translation -->
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">平移 XYZ</div>
+      <div class="key-hint">
+        <div class="key-row">
+          <div class="key" id="kq">Q<span class="key-sub">Z+</span></div>
+          <div class="key" id="kw">W<span class="key-sub">Y+</span></div>
+          <div class="key" id="ke">E<span class="key-sub">Z-</span></div>
+        </div>
+        <div class="key-row">
+          <div class="key" id="ka">A<span class="key-sub">X-</span></div>
+          <div class="key" id="ks">S<span class="key-sub">Y-</span></div>
+          <div class="key" id="kd">D<span class="key-sub">X+</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rotation -->
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">旋转 RPY</div>
+      <div class="key-hint">
+        <div class="key-row">
+          <div class="key" id="ku">U<span class="key-sub">Yaw+</span></div>
+          <div class="key" id="ki">I<span class="key-sub">Roll+</span></div>
+          <div class="key" id="ko">O<span class="key-sub">Yaw-</span></div>
+        </div>
+        <div class="key-row">
+          <div class="key" id="kj">J<span class="key-sub">Pit+</span></div>
+          <div class="key" id="kk">K<span class="key-sub">Roll-</span></div>
+          <div class="key" id="kl">L<span class="key-sub">Pit-</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="ctrl-group">
+      <div class="ctrl-group-label">操作</div>
+      <div class="key-hint">
+        <div class="key-row">
+          <div class="key wide action-btn" id="kspace">Space<span class="key-sub">夹爪切换</span></div>
+        </div>
+        <div class="key-row">
+          <div class="key action-btn" id="kr" style="width:46px;">R<span class="key-sub">复位</span></div>
+          <div class="key action-btn danger" id="kesc" style="width:50px;">Esc<span class="key-sub">急停</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <div class="footer">
-  步长: STEP_POS mm / STEP_ROT °  |  Esc 急停
+  步长: STEP_POS mm / STEP_ROT °  ·  XArm 6 (6-DOF) · delta_eef
 </div>
 
 <script>
 const KEY_IDS = {
   'q':'kq','w':'kw','e':'ke','a':'ka','s':'ks','d':'kd',
   'i':'ki','k':'kk','j':'kj','l':'kl','u':'ku','o':'ko',
-  'r':'kr',' ':'kspace'
+  'r':'kr',' ':'kspace','escape':'kesc'
 };
 const pressedKeys = new Set();
+const ACTION_KEYS = new Set('qweasdikjluo'.split(''));
 
 function send(key) {
   fetch('/cmd', {
@@ -356,6 +470,7 @@ function update(d) {
   st.textContent = d.msg;
   st.className = d.level === 'warn' ? 'warn' : '';
 
+  // Cartesian pose
   document.getElementById('px').textContent = d.pos.x;
   document.getElementById('py').textContent = d.pos.y;
   document.getElementById('pz').textContent = d.pos.z;
@@ -363,10 +478,27 @@ function update(d) {
   document.getElementById('pp').textContent = d.pos.pitch;
   document.getElementById('pw').textContent = d.pos.yaw;
 
+  // Joint angles
+  if (d.joints) {
+    for (let i = 0; i < 6; i++) {
+      const el = document.getElementById('j' + i);
+      if (el) el.textContent = d.joints[i];
+    }
+  }
+
+  // Gripper
   const dot = document.getElementById('gdot');
   dot.className = 'gripper-dot ' + (d.gripper_open ? 'open' : 'close');
-  document.getElementById('gtxt').textContent =
-    '夹爪: ' + (d.gripper_open ? '打开' : '关闭') + ' (' + d.gripper + ')';
+  document.getElementById('gtxt').textContent = d.gripper_open ? '打开' : '关闭';
+  document.getElementById('gval').textContent = d.gripper;
+
+  // Ext force
+  if (d.ext_force) {
+    for (let i = 0; i < 6; i++) {
+      const el = document.getElementById('f' + i);
+      if (el) el.textContent = d.ext_force[i];
+    }
+  }
 }
 
 // --- Continuous key repeat while held ---
@@ -374,8 +506,9 @@ let repeatTimers = {};
 
 document.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
-  if (k === 'escape') { send('escape'); return; }
   const mapped = k === ' ' ? ' ' : k;
+
+  if (mapped === 'escape') { send('escape'); return; }
   if (!(mapped in KEY_IDS) && !ACTION_KEYS.has(mapped)) return;
   e.preventDefault();
 
@@ -383,11 +516,10 @@ document.addEventListener('keydown', e => {
   const el = KEY_IDS[mapped];
   if (el) document.getElementById(el)?.classList.add('active');
 
-  if (pressedKeys.has(mapped)) return;  // already repeating
+  if (pressedKeys.has(mapped)) return;
   pressedKeys.add(mapped);
 
-  send(mapped);  // immediate first press
-  // Start repeat at ~20Hz after 150ms hold
+  send(mapped);
   repeatTimers[mapped] = setTimeout(() => {
     repeatTimers[mapped] = setInterval(() => send(mapped), 50);
   }, 150);
@@ -408,7 +540,16 @@ document.addEventListener('keyup', e => {
   }
 });
 
-const ACTION_KEYS = new Set('qweasdikjluo'.split(''));
+// --- Click support for buttons ---
+document.querySelectorAll('.key').forEach(el => {
+  el.addEventListener('mousedown', () => {
+    const id = el.id;
+    const keyMap = {};
+    for (const [k, v] of Object.entries(KEY_IDS)) { keyMap[v] = k; }
+    const k = keyMap[id];
+    if (k) send(k);
+  });
+});
 
 // Replace placeholders in footer
 document.querySelector('.footer').innerHTML =
@@ -419,7 +560,6 @@ document.querySelector('.footer').innerHTML =
 // Fetch initial state
 fetch('/cmd', {method:'POST', headers:{'Content-Type':'application/json'},
   body: JSON.stringify({key:'_init'})}).then(r=>r.json()).then(d => {
-    // Just populate the display with current values
     if (d.level !== 'ignore') update(d);
   });
 </script>
