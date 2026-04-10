@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 license = {text = "MIT"}
 
 dependencies = [
-    "lerobot>=0.5",
+    "lerobot>=0.4",
     "numpy>=1.24",
     "opencv-python>=4.8",
     "open3d>=0.17",
