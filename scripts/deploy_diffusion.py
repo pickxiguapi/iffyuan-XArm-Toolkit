@@ -43,11 +43,11 @@ from xarm_toolkit.teleop.spacemouse import SpacemouseAgent, SpacemouseConfig
 from xarm_toolkit.utils.logger import get_logger
 
 # ---- CleanDiffuser (only library-level imports, no pipeline dependency) ----
-from CleanDiffuser.cleandiffuser.diffusion import ContinuousRectifiedFlow
-from CleanDiffuser.cleandiffuser.nn_condition import IdentityCondition
-from CleanDiffuser.cleandiffuser.nn_condition.resnet import ResNet18
-from CleanDiffuser.cleandiffuser.nn_diffusion import DiT1d
-from CleanDiffuser.cleandiffuser.utils import MinMaxNormalizer
+from cleandiffuser.diffusion import ContinuousRectifiedFlow
+from cleandiffuser.nn_condition import IdentityCondition
+from cleandiffuser.nn_condition.resnet import ResNet18
+from cleandiffuser.nn_diffusion import DiT1d
+from cleandiffuser.utils import MinMaxNormalizer
 
 
 # ---------------------------------------------------------------------------

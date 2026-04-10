@@ -87,7 +87,8 @@ def convert(
     output_path = Path(output_dir).resolve()
     if output_path.exists():
         shutil.rmtree(output_path)
-    output_path.mkdir(parents=True, exist_ok=True)
+    # 只创建父目录，最终目录由 LeRobot create() 内部创建
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # --- 创建 LeRobot 数据集 ---
     # observation.state = pos(6) + gripper_state(1) = (7,)
