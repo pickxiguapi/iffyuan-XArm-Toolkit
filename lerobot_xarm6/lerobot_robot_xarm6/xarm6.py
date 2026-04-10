@@ -22,7 +22,7 @@ from typing import Any
 import cv2
 import numpy as np
 
-from lerobot.common.robots.robot import Robot
+from lerobot.robots.robot import Robot
 
 from lerobot_robot_xarm6.config_xarm6 import Xarm6Config
 

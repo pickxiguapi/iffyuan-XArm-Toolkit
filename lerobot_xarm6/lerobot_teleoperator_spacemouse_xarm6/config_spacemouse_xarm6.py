@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from lerobot.common.teleoperators.config import TeleoperatorConfig
+from lerobot.teleoperators.teleoperator import TeleoperatorConfig
 
 
 @TeleoperatorConfig.register_subclass("spacemouse_xarm6")

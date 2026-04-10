@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from lerobot.common.teleoperators.teleoperator import Teleoperator
+from lerobot.teleoperators.teleoperator import Teleoperator
 
 from lerobot_teleoperator_spacemouse_xarm6.config_spacemouse_xarm6 import (
     SpacemouseXarm6Config,

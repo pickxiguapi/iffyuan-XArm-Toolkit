@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from lerobot.common.robots.config import RobotConfig
+from lerobot.robots.config import RobotConfig
 
 
 @RobotConfig.register_subclass("xarm6")
