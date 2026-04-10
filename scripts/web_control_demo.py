@@ -115,8 +115,9 @@ env = None
 obs: dict | None = None
 lock = threading.Lock()
 gripper_open = True  # 夹爪当前状态
-STEP_POS = 2.0       # mm per keypress — 非常小，安全试探
-STEP_ROT = 0.005     # rad per keypress (~0.3°)
+STEP_POS = 0.8       # mm per keypress
+STEP_ROT = 0.002     # rad per keypress (~0.11°)
+MOVE_SPEED = 100     # mm/s — 笛卡尔运动速度
 
 # Camera frames (JPEG bytes), updated by CameraThread
 cam_frames: dict[str, bytes | None] = {"arm": None, "fix": None}
@@ -146,13 +147,13 @@ def handle_key(key: str) -> dict:
 
     with lock:
         if key in ACTION_MAP:
-            obs = env.step(action=ACTION_MAP[key])
+            obs = env.step(action=ACTION_MAP[key], speed=MOVE_SPEED)
             return _status("ok", f"move {key}")
 
         if key == " ":
             gripper_open = not gripper_open
             g = 840 if gripper_open else 0
-            obs = env.step(action=[0, 0, 0, 0, 0, 0], gripper_action=g)
+            obs = env.step(action=[0, 0, 0, 0, 0, 0], gripper_action=g, speed=MOVE_SPEED)
             return _status("ok", "夹爪 " + ("打开" if gripper_open else "关闭"))
 
         if key == "r":
@@ -162,7 +163,7 @@ def handle_key(key: str) -> dict:
 
         if key == "escape":
             # 急停: 发送零动作
-            obs = env.step(action=[0, 0, 0, 0, 0, 0])
+            obs = env.step(action=[0, 0, 0, 0, 0, 0], speed=MOVE_SPEED)
             return _status("warn", "急停!")
 
     return _status("ignore", "")
@@ -521,7 +522,7 @@ document.addEventListener('keydown', e => {
 
   send(mapped);
   repeatTimers[mapped] = setTimeout(() => {
-    repeatTimers[mapped] = setInterval(() => send(mapped), 50);
+    repeatTimers[mapped] = setInterval(() => send(mapped), 100);
   }, 150);
 });
 
@@ -655,16 +656,19 @@ def main():
                         help="使用模拟环境 (无需真机)")
     parser.add_argument("--port", type=int, default=8080,
                         help="Web 服务端口 (默认 8080)")
-    parser.add_argument("--step-pos", type=float, default=2.0,
-                        help="平移步长 mm (默认 2.0)")
-    parser.add_argument("--step-rot", type=float, default=0.005,
-                        help="旋转步长 rad (默认 0.005 ≈ 0.29°)")
+    parser.add_argument("--step-pos", type=float, default=0.8,
+                        help="平移步长 mm (默认 0.8)")
+    parser.add_argument("--step-rot", type=float, default=0.002,
+                        help="旋转步长 rad (默认 0.002 ≈ 0.11°)")
+    parser.add_argument("--speed", type=float, default=100,
+                        help="笛卡尔运动速度 mm/s (默认 100)")
     args = parser.parse_args()
     args_global = args
 
-    global STEP_POS, STEP_ROT, ACTION_MAP
+    global STEP_POS, STEP_ROT, MOVE_SPEED, ACTION_MAP
     STEP_POS = args.step_pos
     STEP_ROT = args.step_rot
+    MOVE_SPEED = args.speed
     # Rebuild action map with updated steps
     ACTION_MAP.update({
         "a": np.array([-STEP_POS, 0, 0, 0, 0, 0]),
