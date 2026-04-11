@@ -73,8 +73,13 @@ lerobot-teleoperate \
 lerobot-record \
   --robot.type=xarm6 \
   --teleop.type=spacemouse_xarm6 \
-  --repo-id=iffyuan/xarm6_pick_place \
-  --num-episodes=10
+  --dataset.repo_id=iffyuan/xarm6_pick_place \
+  --dataset.single_task="Pick the object and place it in the box" \
+  --dataset.root=data/xarm6_pick_place \
+  --dataset.fps=10 \
+  --dataset.num_episodes=10 \
+  --dataset.video=false \
+  --dataset.push_to_hub=false
 ```
 
 采集完成后数据自动保存为 **LeRobot Dataset v2** 格式。
@@ -84,8 +89,9 @@ lerobot-record \
 ```bash
 lerobot-replay \
   --robot.type=xarm6 \
-  --repo-id=iffyuan/xarm6_pick_place \
-  --episode=0
+  --dataset.repo_id=iffyuan/xarm6_pick_place \
+  --dataset.root=data/xarm6_pick_place \
+  --dataset.episode=0
 ```
 
 ---
@@ -119,13 +125,29 @@ lerobot-replay \
 | `--teleop.gripper_open_pos` | `840` | 夹爪打开位置 |
 | `--teleop.gripper_close_pos` | `0` | 夹爪关闭位置 |
 
-### 3.3 Record 参数
+### 3.3 Record 参数 (`--dataset.*`)
 
-| 参数 | 说明 |
-|------|------|
-| `--repo-id` | 数据集 ID，格式 `用户名/数据集名`（本地保存和 HF Hub 上传都用这个） |
-| `--num-episodes` | 采集 episode 数量 |
-| `--fps` | 采集帧率（默认由 LeRobot 控制） |
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--dataset.repo_id` | — | **必填**，数据集 ID，格式 `用户名/数据集名` |
+| `--dataset.single_task` | — | **必填**，任务描述（如 "Pick the object and place it"） |
+| `--dataset.root` | `None` | 本地存储路径，None 则存到 `$HF_LEROBOT_HOME/repo_id` |
+| `--dataset.fps` | `30` | 采集帧率（推荐 VLA 训练用 10~15） |
+| `--dataset.episode_time_s` | `60` | 每个 episode 时长（秒） |
+| `--dataset.reset_time_s` | `60` | episode 间重置等待时间（秒） |
+| `--dataset.num_episodes` | `50` | 采集 episode 数量 |
+| `--dataset.video` | `true` | 是否将图像编码为 MP4 视频 |
+| `--dataset.push_to_hub` | `true` | 采集完成后是否上传 HuggingFace Hub |
+| `--dataset.private` | `false` | Hub 上是否设为私有仓库 |
+
+### 3.4 Replay 参数 (`--dataset.*`)
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `--dataset.repo_id` | — | **必填**，数据集 ID |
+| `--dataset.episode` | — | **必填**，回放的 episode 编号 |
+| `--dataset.root` | `None` | 本地数据集路径 |
+| `--dataset.fps` | `30` | 回放帧率 |
 
 ---
 
@@ -140,8 +162,13 @@ lerobot-record \
   --teleop.translation_scale=2.5 \
   --teleop.rotation_scale=0.002 \
   --teleop.deadzone=0.1 \
-  --repo-id=iffyuan/xarm6_plug \
-  --num-episodes=20
+  --dataset.repo_id=iffyuan/xarm6_plug \
+  --dataset.single_task="Insert the plug into the socket" \
+  --dataset.root=data/xarm6_plug \
+  --dataset.num_episodes=20 \
+  --dataset.fps=10 \
+  --dataset.video=false \
+  --dataset.push_to_hub=false
 ```
 
 ### 4.2 更换机械臂 IP
@@ -151,8 +178,12 @@ lerobot-record \
   --robot.type=xarm6 \
   --robot.ip_address=192.168.1.100 \
   --teleop.type=spacemouse_xarm6 \
-  --repo-id=iffyuan/xarm6_demo \
-  --num-episodes=5
+  --dataset.repo_id=iffyuan/xarm6_demo \
+  --dataset.single_task="Demo task" \
+  --dataset.root=data/xarm6_demo \
+  --dataset.num_episodes=5 \
+  --dataset.video=false \
+  --dataset.push_to_hub=false
 ```
 
 ### 4.3 更高分辨率图像
@@ -163,8 +194,12 @@ lerobot-record \
   --robot.image_width=640 \
   --robot.image_height=480 \
   --teleop.type=spacemouse_xarm6 \
-  --repo-id=iffyuan/xarm6_hires \
-  --num-episodes=10
+  --dataset.repo_id=iffyuan/xarm6_hires \
+  --dataset.single_task="Pick and place with high resolution" \
+  --dataset.root=data/xarm6_hires \
+  --dataset.num_episodes=10 \
+  --dataset.video=false \
+  --dataset.push_to_hub=false
 ```
 
 ### 4.4 关节空间控制模式
@@ -174,8 +209,12 @@ lerobot-record \
   --robot.type=xarm6 \
   --robot.action_mode=absolute_joint \
   --teleop.type=spacemouse_xarm6 \
-  --repo-id=iffyuan/xarm6_joint \
-  --num-episodes=10
+  --dataset.repo_id=iffyuan/xarm6_joint \
+  --dataset.single_task="Joint space control demo" \
+  --dataset.root=data/xarm6_joint \
+  --dataset.num_episodes=10 \
+  --dataset.video=false \
+  --dataset.push_to_hub=false
 ```
 
 > **注意**：SpaceMouse 输出的是 delta EEF，如果 action_mode 设为 `absolute_joint`，则 Robot 内部仍然通过 EEF delta 控制，只是观测特征中的 action 定义不同。一般遥操作推荐用默认的 `delta_eef`。
@@ -337,10 +376,14 @@ lerobot/src/lerobot/
 | 问题 | 排查 |
 |------|------|
 | `Unknown robot type: xarm6` | 确认 `cd lerobot && pip install -e .` 已执行 |
+| `ModuleNotFoundError: xarm` | 确认主项目 `pip install -e .` 已执行（pyproject.toml 已将 xarm SDK 包含） |
 | `ModuleNotFoundError: xarm_toolkit` | 确认主项目 `pip install -e .` 已执行 |
 | `ModuleNotFoundError: lerobot` | 确认 `cd lerobot && pip install -e .` 已执行 |
+| `pyspacemouse has no attribute 'read'` | pyspacemouse 版本太新，降级：`pip install pyspacemouse==1.0.4` |
+| `Missing required field 'dataset'` | `lerobot-record` 必须传 `--dataset.repo_id` 和 `--dataset.single_task` |
 | SpaceMouse 无反应 | `lsusb` 检查 USB 连接；确认 hidapi 已安装 |
 | 相机连接失败 | 先跑 `python scripts/test_cameras.py` 单独验证 |
 | 机械臂连接超时 | 检查 IP 地址和网络，`ping 192.168.31.232` |
 | 图像全黑 | 检查相机序列号是否正确（`--robot.cam_arm_serial=...`） |
+| `cv2.resize` 空图崩溃 | 相机启动初期帧为空，已内置重试逻辑，一般自动恢复 |
 | action_features 不匹配 | 确保 `--robot.action_mode` 和 `--teleop.type` 一致（默认 delta_eef + spacemouse_xarm6） |
