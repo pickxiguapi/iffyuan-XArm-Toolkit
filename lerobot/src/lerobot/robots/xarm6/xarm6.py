@@ -7,11 +7,11 @@ work out-of-the-box with the XArm 6-DOF arm + dual RealSense cameras.
 
 **No files in xarm_toolkit/ are modified** - this is a pure adapter layer.
 
-Feature mapping (aligned with Pi0.5 / VLA convention):
-    observation.state       <- pos(6) + gripper_state(1)  -> (7,) float32
-    action                  <- action(6) + gripper_action(1) -> (7,) float32
-    observation.image       <- rgb_fix (fixed camera)      -> (H, W, 3) uint8
-    observation.wrist_image <- rgb_arm (arm camera)        -> (H, W, 3) uint8
+Feature mapping (follows SO100/Koch convention — short keys, per-joint floats):
+    observation.state  <- [x, y, z, roll, pitch, yaw, gripper] each as float
+    action             <- [dx, dy, dz, droll, dpitch, dyaw, gripper_action] each as float
+    observation.images.image       <- rgb_fix (fixed camera)  -> (H, W, 3) uint8
+    observation.images.wrist_image <- rgb_arm (arm camera)    -> (H, W, 3) uint8
 """
 
 from __future__ import annotations
@@ -30,20 +30,19 @@ from .config_xarm6 import Xarm6Config
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Feature name constants - aligned with Pi0.5 / VLA convention
+# Feature names — short keys (no "observation." / "action." prefix)
+# hw_to_dataset_features adds the prefix automatically.
 # ---------------------------------------------------------------------------
 
-# observation.state = pos(6) + gripper_state(1) = (7,)
-_OBS_STATE = "observation.state"
-_STATE_DIM = 7
+# State features: each declared as float, aggregated into observation.state (7,)
+_STATE_KEYS = ["x", "y", "z", "roll", "pitch", "yaw", "gripper"]
 
-# action = action_delta(6) + gripper_action(1) = (7,)
-_ACTION = "action"
-_ACTION_DIM = 7
+# Action features: each declared as float, aggregated into action (7,)
+_ACTION_KEYS = ["dx", "dy", "dz", "droll", "dpitch", "dyaw", "gripper_action"]
 
-# Camera keys
-_CAM_FIX = "observation.image"         # fixed camera - main view
-_CAM_ARM = "observation.wrist_image"   # arm camera - wrist view
+# Camera feature keys — become observation.images.image / observation.images.wrist_image
+_CAM_FIX = "image"             # fixed camera - main view
+_CAM_ARM = "wrist_image"       # arm camera - wrist view
 
 # Gripper threshold: <= 420 -> closed (0), > 420 -> open (1)
 _GRIPPER_THRESHOLD = 420
@@ -56,10 +55,10 @@ class Xarm6(Robot):
     :class:`RealsenseEnv`.  Uses the same feature mapping as the Zarr->LeRobot
     converter (see README):
 
-    - ``observation.state``: pos(6) + gripper_state(1) -> (7,) float32
-    - ``action``: action_delta(6) + gripper_action(1) -> (7,) float32
-    - ``observation.image``: fixed camera RGB
-    - ``observation.wrist_image``: arm-mounted camera RGB
+    - ``observation.state``: [x, y, z, roll, pitch, yaw, gripper] -> (7,) float32
+    - ``action``: [dx, dy, dz, droll, dpitch, dyaw, gripper_action] -> (7,) float32
+    - ``observation.images.image``: fixed camera RGB
+    - ``observation.images.wrist_image``: arm-mounted camera RGB
     """
 
     config_class = Xarm6Config
@@ -77,26 +76,27 @@ class Xarm6(Robot):
         # XArm6 manages cameras internally (not via LeRobot's camera system),
         # but lerobot-record uses len(robot.cameras) for thread pool sizing.
         # Expose a dict keyed by camera name so the count is correct.
-        self.cameras = {"cam_arm": None, "cam_fix": None}
+        self.cameras = {_CAM_ARM: None, _CAM_FIX: None}
 
     # ------------------------------------------------------------------
-    # Feature declarations
+    # Feature declarations (follows SO100/Koch convention)
     # ------------------------------------------------------------------
 
     @property
     def observation_features(self) -> dict[str, Any]:
         h, w = self.config.image_height, self.config.image_width
-        return {
-            _OBS_STATE: (_STATE_DIM,),           # pos(6) + gripper_state(1)
-            _CAM_FIX: (h, w, 3),                 # fixed camera RGB
-            _CAM_ARM: (h, w, 3),                 # arm camera RGB
-        }
+        features: dict[str, Any] = {}
+        # Per-joint state features -> aggregated into observation.state by pipeline
+        for key in _STATE_KEYS:
+            features[key] = float
+        # Camera features -> become observation.images.{key}
+        features[_CAM_FIX] = (h, w, 3)
+        features[_CAM_ARM] = (h, w, 3)
+        return features
 
     @property
     def action_features(self) -> dict[str, Any]:
-        return {
-            _ACTION: (_ACTION_DIM,),              # action(6) + gripper_action(1)
-        }
+        return {key: float for key in _ACTION_KEYS}
 
     # ------------------------------------------------------------------
     # Connection lifecycle
@@ -174,15 +174,11 @@ class Xarm6(Robot):
     def get_observation(self) -> RobotObservation:
         """Read all sensors and return a dict matching observation_features.
 
-        Returns
-        -------
-        dict with keys:
-            observation.state       : np.ndarray (7,) float32
-                                      pos(6) + gripper_state(1)
-            observation.image       : np.ndarray (H, W, 3) uint8
-                                      fixed camera RGB
-            observation.wrist_image : np.ndarray (H, W, 3) uint8
-                                      arm-mounted camera RGB
+        Returns dict with short keys (no "observation." prefix):
+            x, y, z, roll, pitch, yaw : float   — end-effector pose
+            gripper                    : float   — 0.0 (closed) or 1.0 (open)
+            image                      : np.ndarray (H, W, 3) uint8 — fixed cam
+            wrist_image                : np.ndarray (H, W, 3) uint8 — arm cam
         """
         if not self.is_connected:
             raise ConnectionError("XArm6 is not connected. Call connect() first.")
@@ -190,30 +186,31 @@ class Xarm6(Robot):
         # Arm state
         env_obs = self._env._get_observation()
 
-        # observation.state = pos(6) + gripper_state(1)
-        pos = np.array(env_obs["cart_pos"], dtype=np.float32)       # (6,)
+        pos = env_obs["cart_pos"]  # list of 6 floats: [x, y, z, roll, pitch, yaw]
         gripper_raw = float(env_obs["gripper_position"])
-        gripper_state = np.array(
-            [0.0 if gripper_raw <= _GRIPPER_THRESHOLD else 1.0],
-            dtype=np.float32,
-        )  # (1,)
-        state = np.concatenate([pos, gripper_state])                # (7,)
+        gripper_state = 1.0 if gripper_raw > _GRIPPER_THRESHOLD else 0.0
 
-        # Camera images - capture, convert to numpy, resize
+        # Camera images
         h, w = self.config.image_height, self.config.image_width
 
-        return {
-            _OBS_STATE: state,
-            _CAM_FIX: self._capture_rgb(self._cam_fix, w, h),
-            _CAM_ARM: self._capture_rgb(self._cam_arm, w, h),
-        }
+        obs: dict[str, Any] = {}
+        # State: per-joint floats (pipeline aggregates into observation.state)
+        for i, key in enumerate(_STATE_KEYS[:-1]):  # x, y, z, roll, pitch, yaw
+            obs[key] = float(pos[i])
+        obs["gripper"] = gripper_state
+
+        # Images: short keys (pipeline maps to observation.images.{key})
+        obs[_CAM_FIX] = self._capture_rgb(self._cam_fix, w, h)
+        obs[_CAM_ARM] = self._capture_rgb(self._cam_arm, w, h)
+
+        return obs
 
     def send_action(self, action: RobotAction) -> RobotAction:
         """Send motor commands to the XArm.
 
         Args:
             action: Dict with key ``"action"`` -> np.ndarray (7,)
-                    = [action_delta(6), gripper_action(1)].
+                    = [dx, dy, dz, droll, dpitch, dyaw, gripper_action].
 
         Returns:
             The action dict that was actually sent.
@@ -221,7 +218,7 @@ class Xarm6(Robot):
         if not self.is_connected:
             raise ConnectionError("XArm6 is not connected. Call connect() first.")
 
-        act = np.asarray(action[_ACTION], dtype=np.float64)
+        act = np.asarray(action["action"], dtype=np.float64)
 
         # Split: first 6 = eef delta/absolute, last 1 = gripper
         action_6d = act[:6]
