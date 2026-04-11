@@ -191,7 +191,7 @@ python scripts/collect_data.py --save-video --dataset datasets/demo.zarr
 
 ### Step 6: Zarr → LeRobot 数据转换
 
-将采集的 Zarr 数据集转换为 [LeRobot v2](https://github.com/huggingface/lerobot) 格式，用于 VLA 模型训练（Pi0.5 等）。
+将采集的 Zarr 数据集转换为 [LeRobot v3.0](https://github.com/huggingface/lerobot) 格式，用于 VLA 模型训练（Pi0.5 等）。
 
 **安装 LeRobot:**
 ```bash
@@ -226,6 +226,7 @@ python scripts/verify_lerobot.py --path lerobot_datasets/demo --repo-id demo
 ---
 
 ### Step 7: VLA 部署
+## 本章节环境是经过验证的，但是部署还没有经过验证，待加入pi0.5进行验证
 
 Server/Client 架构，GPU 机器跑推理，机器人端执行动作。
 

@@ -14,7 +14,7 @@ xarm_toolkit/env/xarm_env.py      (机械臂控制)
 xarm_toolkit/env/realsense_env.py  (双相机)
 xarm_toolkit/teleop/spacemouse.py  (SpaceMouse 6DOF)
        ↓
-采集数据 → LeRobot Dataset v2 (Parquet + MP4)
+采集数据 → LeRobot Dataset v3.0 (Parquet + MP4)
 ```
 
 **与原有方案的关系**：这是一套**独立的**数据采集方案。原有的 `scripts/collect_data.py` → Zarr 方案完全不受影响，两者可以共存。
@@ -85,7 +85,7 @@ lerobot-record \
 
 > 加 `--display_data=true` 会弹出 Rerun 可视化窗口，实时显示相机画面和机器人状态。不需要可视化时去掉此参数。
 
-采集完成后数据自动保存为 **LeRobot Dataset v2** 格式。
+采集完成后数据自动保存为 **LeRobot Dataset v3.0** 格式。
 
 ### 2.3 回放验证 ⚠️ 功能已实现，未经测试
 
@@ -226,45 +226,48 @@ lerobot-record \
 
 ## 五、数据格式
 
-LeRobot 采集的数据为 **LeRobot Dataset v2** 格式，和原有的 Zarr 格式不同。
+LeRobot 采集的数据为 **LeRobot Dataset v3.0** 格式（LeRobot ≥ 0.5），和原有的 Zarr 格式不同。
 
 ### 5.1 目录结构
 
 ```
-~/.cache/huggingface/lerobot/iffyuan/xarm6_pick_place/
+data/xarm6_pick_place/
 ├── data/
 │   └── chunk-000/
-│       ├── episode_000000.parquet    # 数值数据（state, action）
-│       ├── episode_000001.parquet
+│       ├── file-000.parquet              # 数值数据（state, action, 帧索引）
 │       └── ...
 ├── videos/
-│   └── chunk-000/
-│       ├── observation.image/        # 固定相机视频（主视角）
-│       │   ├── episode_000000.mp4
-│       │   └── ...
-│       └── observation.wrist_image/  # 臂上相机视频（手腕视角）
-│           ├── episode_000000.mp4
+│   └── observation.images.image/         # 固定相机视频（主视角）
+│       └── chunk-000/
+│           ├── file-000.mp4
+│           └── ...
+│   └── observation.images.wrist_image/   # 臂上相机视频（手腕视角）
+│       └── chunk-000/
+│           ├── file-000.mp4
 │           └── ...
 └── meta/
-    ├── info.json                     # 数据集配置（robot_type, fps, features）
-    ├── episodes.jsonl                # Episode 索引
-    └── tasks.jsonl                   # 任务描述
+    ├── info.json                         # 数据集配置（robot_type, fps, features, codebase_version）
+    ├── stats.json                        # 各特征的统计量（均值、方差、min、max）
+    ├── tasks.parquet                     # 任务描述
+    └── episodes/
+        └── chunk-000/
+            └── file-000.parquet          # Episode 元数据（起止索引、长度等）
 ```
+
+> v3.0 使用 chunk/file 分层组织，支持大规模数据集。`--dataset.video=false` 时，图像以 PNG 文件存储在 `images/` 目录下，不生成 `videos/`。
 
 ### 5.2 字段映射
 
-与 README 中 Zarr→LeRobot 转换器保持一致的映射规则：
-
 | LeRobot key | 来源 | shape | 说明 |
 |---|---|---|---|
-| `observation.state` | pos(6) + gripper_state(1) | **(7,) float32** | 末端位姿 [x,y,z,r,p,y] (mm/rad) + 夹爪状态 (0=闭/1=开) |
-| `action` | action_delta(6) + gripper_action(1) | **(7,) float32** | SpaceMouse 6D 增量 + 夹爪动作 (0=闭/1=开) |
-| `observation.image` | rgb_fix（固定相机 L515） | **(H, W, 3) uint8** | 主视角 RGB |
-| `observation.wrist_image` | rgb_arm（臂上相机 D435i） | **(H, W, 3) uint8** | 手腕视角 RGB |
+| `observation.state` | [x, y, z, roll, pitch, yaw, gripper] | **(7,) float32** | 末端位姿 (mm/rad) + 夹爪状态 (0=闭/1=开) |
+| `action` | [dx, dy, dz, droll, dpitch, dyaw, gripper_action] | **(7,) float32** | SpaceMouse 6D 增量 + 夹爪动作 (0=闭/1=开) |
+| `observation.images.image` | rgb_fix（固定相机 L515） | **(H, W, 3) uint8** | 主视角 RGB |
+| `observation.images.wrist_image` | rgb_arm（臂上相机 D435i） | **(H, W, 3) uint8** | 手腕视角 RGB |
 
 ### 5.3 Parquet 数据列
 
-每个 episode 的 Parquet 文件包含以下列：
+每个 chunk 的 Parquet 文件包含以下列：
 
 | 列名 | 类型 | 说明 |
 |------|------|------|
@@ -272,11 +275,11 @@ LeRobot 采集的数据为 **LeRobot Dataset v2** 格式，和原有的 Zarr 格
 | `episode_index` | int | Episode 编号 |
 | `frame_index` | int | Episode 内帧索引 |
 | `timestamp` | float | 时间戳（秒） |
-| `observation.state` | float32[7] | pos(6) + gripper_state(1) |
-| `observation.image` | — | 固定相机帧（引用 MP4 视频） |
-| `observation.wrist_image` | — | 臂上相机帧（引用 MP4 视频） |
-| `action` | float32[7] | action_delta(6) + gripper_action(1) |
-| `next.done` | bool | 是否 Episode 最后一帧 |
+| `task_index` | int | 任务编号（对应 tasks.parquet） |
+| `observation.state` | float32[7] | [x, y, z, roll, pitch, yaw, gripper] |
+| `observation.images.image` | — | 固定相机帧（引用视频/图像文件） |
+| `observation.images.wrist_image` | — | 臂上相机帧（引用视频/图像文件） |
+| `action` | float32[7] | [dx, dy, dz, droll, dpitch, dyaw, gripper_action] |
 
 ### 5.4 读取数据（Python）
 
@@ -284,7 +287,7 @@ LeRobot 采集的数据为 **LeRobot Dataset v2** 格式，和原有的 Zarr 格
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
 # 加载本地数据集
-dataset = LeRobotDataset("iffyuan/xarm6_pick_place")
+dataset = LeRobotDataset("iffyuan/xarm6_pick_place", root="data/xarm6_pick_place")
 
 # 查看基本信息
 print(f"总 episodes: {dataset.num_episodes}")
@@ -294,12 +297,12 @@ print(f"FPS: {dataset.fps}")
 # 读取第 0 帧
 frame = dataset[0]
 print(frame.keys())
-# → dict_keys(['observation.state', 'observation.image',
-#              'observation.wrist_image', 'action', ...])
+# → dict_keys(['observation.state', 'observation.images.image',
+#              'observation.images.wrist_image', 'action', ...])
 
 # observation.state 是 (7,) 向量
-state = frame["observation.state"]   # pos(6) + gripper_state(1)
-action = frame["action"]             # delta(6) + gripper_action(1)
+state = frame["observation.state"]   # [x, y, z, roll, pitch, yaw, gripper]
+action = frame["action"]             # [dx, dy, dz, droll, dpitch, dyaw, gripper_action]
 ```
 
 ---
@@ -312,15 +315,15 @@ action = frame["action"]             # delta(6) + gripper_action(1)
 
 | 特征名 | shape | dtype | 说明 |
 |--------|-------|-------|------|
-| `observation.state` | (7,) | float32 | pos(6) + gripper_state(1)，其中 pos = [x,y,z,roll,pitch,yaw]，gripper_state: 0=闭/1=开 |
-| `observation.image` | (240, 320, 3) | uint8 | 固定相机 L515 RGB（主视角） |
-| `observation.wrist_image` | (240, 320, 3) | uint8 | 臂上相机 D435i RGB（手腕视角） |
+| `observation.state` | (7,) | float32 | [x, y, z, roll, pitch, yaw, gripper]，xyz 单位 mm，角度 rad，gripper: 0=闭/1=开 |
+| `observation.images.image` | (240, 320, 3) | uint8 | 固定相机 L515 RGB（主视角） |
+| `observation.images.wrist_image` | (240, 320, 3) | uint8 | 臂上相机 D435i RGB（手腕视角） |
 
 ### 6.2 Action Features
 
 | 特征名 | shape | dtype | 说明 |
 |--------|-------|-------|------|
-| `action` | (7,) | float32 | action_delta(6) + gripper_action(1)，其中 delta = [dx,dy,dz,dr,dp,dy]，gripper_action: 0=闭/1=开 |
+| `action` | (7,) | float32 | [dx, dy, dz, droll, dpitch, dyaw, gripper_action]，gripper_action: 0=闭/1=开 |
 
 ### 6.3 夹爪映射
 
@@ -335,7 +338,7 @@ action = frame["action"]             # delta(6) + gripper_action(1)
 
 | | 原有方案 (`collect_data.py`) | LeRobot 方案 (`lerobot-record`) |
 |---|---|---|
-| **数据格式** | Zarr + Blosc 压缩 | Parquet + MP4 视频 |
+| **数据格式** | Zarr + Blosc 压缩 | LeRobot Dataset v3.0 (Parquet + MP4) |
 | **图像存储** | 原始 uint8 数组 (channel-first) | H.264 视频压缩 |
 | **深度图** | ✅ 支持 (uint16) | ❌ 仅 RGB |
 | **力传感器** | ✅ 支持 (`--force`) | ❌ 不包含 |
