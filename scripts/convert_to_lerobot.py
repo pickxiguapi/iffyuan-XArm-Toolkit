@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Zarr → LeRobot v2 数据集转换脚本.
+"""Zarr → LeRobot v3.0 数据集转换脚本.
 
-将 xarm_toolkit Collector 采集的 Zarr 数据集转换为 LeRobot v2 格式。
+将 xarm_toolkit Collector 采集的 Zarr 数据集转换为 LeRobot v3.0 格式。
+输出格式版本取决于安装的 LeRobot 版本（0.5+ 即为 v3.0）。
 
 用法::
 
@@ -217,7 +218,7 @@ def convert(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Zarr → LeRobot v2 数据集转换")
+    parser = argparse.ArgumentParser(description="Zarr → LeRobot v3.0 数据集转换")
     parser.add_argument("--input", "-i", required=True, help="输入 Zarr 数据集路径")
     parser.add_argument("--output", "-o", required=True, help="LeRobot 输出目录")
     parser.add_argument("--repo-id", required=True, help="数据集 repo ID")
