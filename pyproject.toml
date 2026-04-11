@@ -40,8 +40,8 @@ xarm-collect = "scripts.collect_data:main"
 xarm-viz     = "scripts.visualize:main"
 
 [tool.setuptools.packages.find]
-include = ["xarm_toolkit*"]
-exclude = ["reference*", "xarm"]
+include = ["xarm_toolkit*", "xarm*"]
+exclude = ["reference*"]
 
 [tool.ruff]
 line-length = 100
