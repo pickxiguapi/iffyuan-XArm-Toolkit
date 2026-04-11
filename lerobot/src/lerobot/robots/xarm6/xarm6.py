@@ -233,19 +233,27 @@ class Xarm6(Robot):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _capture_rgb(cam, width: int, height: int) -> np.ndarray:
+    def _capture_rgb(cam, width: int, height: int, max_retries: int = 5) -> np.ndarray:
         """Capture one RGB frame, convert to numpy uint8, and resize.
+
+        The first few frames after camera startup may be empty — retry
+        up to *max_retries* times before falling back to a black image.
 
         Returns (H, W, 3) uint8 array.
         """
-        cam_obs = cam.step()
+        import time
 
-        # RealsenseEnv returns open3d Tensor for "rgb" mode
-        rgb = cam_obs["rgb"]
-        img = np.asarray(rgb)  # (H_orig, W_orig, 3) uint8
+        for _ in range(max_retries):
+            cam_obs = cam.step()
+            rgb = cam_obs["rgb"]
+            img = np.asarray(rgb)  # (H_orig, W_orig, 3) uint8
 
-        # Resize if needed
-        if img.shape[0] != height or img.shape[1] != width:
-            img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LINEAR)
+            if img.size > 0 and img.ndim == 3:
+                if img.shape[0] != height or img.shape[1] != width:
+                    img = cv2.resize(img, (width, height), interpolation=cv2.INTER_LINEAR)
+                return img
 
-        return img
+            time.sleep(0.05)
+
+        logger.warning("Camera returned empty frame after %d retries, using black image.", max_retries)
+        return np.zeros((height, width, 3), dtype=np.uint8)
