@@ -11,7 +11,7 @@
         --repo-id xarm6_act_pick2 \
         --output outputs/act_pick2 \
         --batch-size 64 \
-        --steps 40000 \
+        --steps 20000 \
         --chunk-size 64
 """
 
@@ -41,8 +41,8 @@ def main():
     parser.add_argument("--device", default="cuda", help="设备: cuda / cpu / mps (默认 cuda)")
 
     # 训练参数
-    parser.add_argument("--batch-size", type=int, default=64, help="批大小 (默认 64，显存不够降到 8/16)")
-    parser.add_argument("--steps", type=int, default=40_000, help="总训练步数 (默认 40000)")
+    parser.add_argument("--batch-size", type=int, default=128, help="批大小 (默认 64，显存不够降到 8/16)")
+    parser.add_argument("--steps", type=int, default=20_000, help="总训练步数 (默认 20000)")
     parser.add_argument("--log-freq", type=int, default=100, help="日志打印间隔 (默认 100)")
     parser.add_argument("--save-freq", type=int, default=5_000, help="Checkpoint 保存间隔 (默认 5000)")
     parser.add_argument("--num-workers", type=int, default=4, help="DataLoader 工作进程数 (默认 4)")
@@ -102,6 +102,7 @@ def main():
         output_features=output_features,
         chunk_size=chunk_size,
         n_action_steps=n_action_steps,
+        device=device,
         # 以下为默认值，按需覆盖：
         # vision_backbone="resnet18",
         # dim_model=512,
