@@ -74,6 +74,11 @@ class Xarm6(Robot):
         self._cam_arm = None
         self._cam_fix = None
 
+        # XArm6 manages cameras internally (not via LeRobot's camera system),
+        # but lerobot-record uses len(robot.cameras) for thread pool sizing.
+        # Expose a dict keyed by camera name so the count is correct.
+        self.cameras = {"cam_arm": None, "cam_fix": None}
+
     # ------------------------------------------------------------------
     # Feature declarations
     # ------------------------------------------------------------------
