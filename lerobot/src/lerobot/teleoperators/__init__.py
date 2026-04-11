@@ -17,3 +17,5 @@
 from .config import TeleoperatorConfig
 from .teleoperator import Teleoperator
 from .utils import TeleopEvents, make_teleoperator_from_config
+
+from . import spacemouse_xarm6  # noqa: F401
