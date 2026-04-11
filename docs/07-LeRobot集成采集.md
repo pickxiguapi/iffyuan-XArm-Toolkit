@@ -55,7 +55,7 @@ print('   Default image:    ', f'{Xarm6Config().image_width}x{Xarm6Config().imag
 
 ## 二、快速开始
 
-### 2.1 遥操作测试（不保存数据）
+### 2.1 遥操作测试（不保存数据） ✅ 已测试通过
 
 先测试 SpaceMouse + 机械臂是否正常工作：
 
@@ -67,7 +67,7 @@ lerobot-teleoperate \
 
 移动 SpaceMouse 应该能看到机械臂跟随运动，左键切换夹爪开/关。
 
-### 2.2 数据采集
+### 2.2 数据采集 ⚠️ 功能已实现，未经完整测试
 
 ```bash
 lerobot-record \
@@ -79,12 +79,15 @@ lerobot-record \
   --dataset.fps=10 \
   --dataset.num_episodes=10 \
   --dataset.video=false \
-  --dataset.push_to_hub=false
+  --dataset.push_to_hub=false \
+  --display_data=true
 ```
+
+> 加 `--display_data=true` 会弹出 Rerun 可视化窗口，实时显示相机画面和机器人状态。不需要可视化时去掉此参数。
 
 采集完成后数据自动保存为 **LeRobot Dataset v2** 格式。
 
-### 2.3 回放验证
+### 2.3 回放验证 ⚠️ 功能已实现，未经测试
 
 ```bash
 lerobot-replay \
@@ -387,3 +390,17 @@ lerobot/src/lerobot/
 | 图像全黑 | 检查相机序列号是否正确（`--robot.cam_arm_serial=...`） |
 | `cv2.resize` 空图崩溃 | 相机启动初期帧为空，已内置重试逻辑，一般自动恢复 |
 | action_features 不匹配 | 确保 `--robot.action_mode` 和 `--teleop.type` 一致（默认 delta_eef + spacemouse_xarm6） |
+
+---
+
+## 十、测试状态
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| **安装 & import** | ✅ 已测试 | Python import 和 CLI type 注册均通过 |
+| **2.1 遥操作 (teleoperate)** | ✅ 已测试 | SpaceMouse 控制机械臂运动正常 |
+| **2.2 数据采集 (record)** | ⚠️ 未完整测试 | 功能已实现，启动流程跑通，但尚未完成完整 episode 采集验证 |
+| **2.3 回放 (replay)** | ⚠️ 未测试 | 功能已实现，依赖 record 产出数据后验证 |
+| **四、常用采集场景** | ⚠️ 未测试 | 参数组合未逐一验证 |
+
+> **已知问题**：Open3D RealSense 采集帧率较低（约 1~5 Hz），可能无法达到 10 Hz 目标帧率。后续可考虑换用 pyrealsense2 原生采集或异步读取优化。
