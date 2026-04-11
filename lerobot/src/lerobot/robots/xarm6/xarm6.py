@@ -209,8 +209,8 @@ class Xarm6(Robot):
         """Send motor commands to the XArm.
 
         Args:
-            action: Dict with key ``"action"`` -> np.ndarray (7,)
-                    = [dx, dy, dz, droll, dpitch, dyaw, gripper_action].
+            action: Dict with per-joint keys (dx, dy, dz, droll, dpitch, dyaw, gripper_action),
+                    each a float value. This matches the action_features format.
 
         Returns:
             The action dict that was actually sent.
@@ -218,11 +218,12 @@ class Xarm6(Robot):
         if not self.is_connected:
             raise ConnectionError("XArm6 is not connected. Call connect() first.")
 
-        act = np.asarray(action["action"], dtype=np.float64)
-
-        # Split: first 6 = eef delta/absolute, last 1 = gripper
-        action_6d = act[:6]
-        gripper_action_val = float(act[6])
+        # Extract 6-DOF delta from per-joint dict
+        action_6d = np.array(
+            [float(action[k]) for k in _ACTION_KEYS[:6]],
+            dtype=np.float64,
+        )
+        gripper_action_val = float(action["gripper_action"])
 
         # gripper_action: 0 -> close (0), 1 -> open (840)
         gripper_pos = self.config.initial_gripper_position if gripper_action_val > 0.5 else 0
