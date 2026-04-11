@@ -12,7 +12,8 @@
         --output outputs/act_pick2 \
         --batch-size 64 \
         --steps 20000 \
-        --chunk-size 64
+        --chunk-size 64 \
+        --wandb --wandb-project xarm6-act
 """
 
 from __future__ import annotations
@@ -47,6 +48,11 @@ def main():
     parser.add_argument("--save-freq", type=int, default=5_000, help="Checkpoint 保存间隔 (默认 5000)")
     parser.add_argument("--num-workers", type=int, default=4, help="DataLoader 工作进程数 (默认 4)")
 
+    # WandB
+    parser.add_argument("--wandb", action="store_true", help="启用 WandB 日志记录")
+    parser.add_argument("--wandb-project", default="xarm6-act", help="WandB 项目名 (默认 xarm6-act)")
+    parser.add_argument("--wandb-run", default=None, help="WandB run 名称 (默认自动生成)")
+
     # ACT 超参
     parser.add_argument("--chunk-size", type=int, default=64,
                         help="动作预测长度 (默认 64，建议 30~100)")
@@ -68,6 +74,27 @@ def main():
 
     chunk_size = args.chunk_size
     n_action_steps = args.n_action_steps
+    use_wandb = args.wandb
+
+    # ── WandB 初始化 ─────────────────────────────────────
+    if use_wandb:
+        import wandb
+        wandb.init(
+            project=args.wandb_project,
+            name=args.wandb_run,
+            config={
+                "dataset": dataset_path,
+                "repo_id": repo_id,
+                "batch_size": batch_size,
+                "training_steps": training_steps,
+                "chunk_size": chunk_size,
+                "n_action_steps": n_action_steps,
+                "device": str(device),
+                "num_workers": num_workers,
+                "log_freq": log_freq,
+                "save_freq": save_freq,
+            },
+        )
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -172,6 +199,15 @@ def main():
             pbar.set_postfix(postfix)
             pbar.update(1)
 
+            # WandB 日志
+            if use_wandb:
+                log_dict = {"loss": loss.item(), "step": step}
+                if "l1_loss" in loss_dict:
+                    log_dict["l1_loss"] = loss_dict["l1_loss"]
+                if "kld_loss" in loss_dict:
+                    log_dict["kld_loss"] = loss_dict["kld_loss"]
+                wandb.log(log_dict, step=step)
+
             if step > 0 and step % save_freq == 0:
                 ckpt_dir = output_dir / f"checkpoint_{step}"
                 policy.save_pretrained(ckpt_dir)
@@ -197,6 +233,9 @@ def main():
     print(f"  总耗时: {elapsed / 60:.1f} min")
     print(f"  模型保存: {output_dir}")
     print(f"{'=' * 60}")
+
+    if use_wandb:
+        wandb.finish()
 
 
 if __name__ == "__main__":
