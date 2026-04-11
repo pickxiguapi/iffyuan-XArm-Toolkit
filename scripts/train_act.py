@@ -22,6 +22,7 @@ import time
 from pathlib import Path
 
 import torch
+from tqdm import tqdm
 
 from lerobot.configs.types import FeatureType
 from lerobot.datasets.dataset_metadata import LeRobotDatasetMetadata
@@ -123,12 +124,11 @@ def main():
 
     # 4. 构建 delta_timestamps
     #    ACT 需要当前帧起未来 chunk_size 步的动作作为训练目标
+    #    图像不需要设 delta_timestamps，数据集默认只取当前帧
     fps = dataset_metadata.fps
     delta_timestamps = {
         "action": [i / fps for i in range(chunk_size)],
     }
-    # 图像特征只取当前帧
-    delta_timestamps |= {k: [0] for k in cfg.image_features}
 
     # 5. 加载数据集
     print(f"[INFO] 加载数据集 (fps={fps})...")
@@ -151,6 +151,9 @@ def main():
     done = False
     t0 = time.time()
 
+    pbar = tqdm(total=training_steps, desc="训练", unit="step",
+                dynamic_ncols=True, smoothing=0.1)
+
     while not done:
         for batch in dataloader:
             batch = preprocessor(batch)
@@ -159,31 +162,28 @@ def main():
             optimizer.step()
             optimizer.zero_grad()
 
-            if step % log_freq == 0:
-                elapsed = time.time() - t0
-                speed = step / max(elapsed, 1e-6)
-                msg = (
-                    f"step {step:>6d}/{training_steps} | "
-                    f"loss: {loss.item():.4f}"
-                )
-                if "l1_loss" in loss_dict:
-                    msg += f" | L1: {loss_dict['l1_loss']:.4f}"
-                if "kld_loss" in loss_dict:
-                    msg += f" | KLD: {loss_dict['kld_loss']:.4f}"
-                msg += f" | {speed:.1f} steps/s"
-                print(msg)
+            # 更新进度条
+            postfix = {"loss": f"{loss.item():.4f}"}
+            if "l1_loss" in loss_dict:
+                postfix["L1"] = f"{loss_dict['l1_loss']:.4f}"
+            if "kld_loss" in loss_dict:
+                postfix["KLD"] = f"{loss_dict['kld_loss']:.4f}"
+            pbar.set_postfix(postfix)
+            pbar.update(1)
 
             if step > 0 and step % save_freq == 0:
                 ckpt_dir = output_dir / f"checkpoint_{step}"
                 policy.save_pretrained(ckpt_dir)
                 preprocessor.save_pretrained(ckpt_dir)
                 postprocessor.save_pretrained(ckpt_dir)
-                print(f"  → saved checkpoint: {ckpt_dir}")
+                tqdm.write(f"  → saved checkpoint: {ckpt_dir}")
 
             step += 1
             if step >= training_steps:
                 done = True
                 break
+
+    pbar.close()
 
     # 8. 保存最终模型
     elapsed = time.time() - t0
