@@ -1,30 +1,52 @@
 #!/usr/bin/env python3
-"""Data collection entry point.
+"""XArm6 数据采集入口脚本。
 
-Usage:
-    # 默认采集 rgbd，3 个 episode
-    python scripts/collect_data.py --dataset datasets/demo.zarr
+Usage
+-----
+# 默认采集 rgbd，目标 3 个 episode（新建数据集）
+python scripts/collect_data.py --dataset datasets/demo.zarr
 
-    # 指定任务初始偏移
-    python scripts/collect_data.py --start-bias 0 0 -200 --dataset datasets/plug.zarr
+# 指定目标 30 个 episode（断点续采：已有 N 个则只采 30-N 个）
+python scripts/collect_data.py --dataset datasets/plug.zarr --episodes 30
 
-    # 带随机偏移 + 夹爪始终闭合（stamp 类任务）
-    python scripts/collect_data.py --start-bias 0 0 -270 --gripper-closed --dataset datasets/stamp.zarr
+# 指定任务初始偏移 + 力控
+python scripts/collect_data.py --start-bias 0 0 -200 --force --dataset datasets/plug.zarr
 
-键盘控制:
-    Space   — 开始录制当前 episode
-    Enter   — 结束当前 episode
-    Ctrl+C  — 中止采集
+# 带随机偏移 + 夹爪始终闭合（stamp 类任务）
+python scripts/collect_data.py --start-bias 0 0 -270 --gripper-closed --dataset datasets/stamp.zarr
 
-SpaceMouse:
-    6D 移动    — 控制机械臂末端
-    左键(btn0) — 等待阶段: 张开夹爪 / 录制阶段: 张开夹爪
-    右键(btn1) — 等待阶段: 关闭夹爪 / 录制阶段: 关闭夹爪
+# 采集同时保存回放视频
+python scripts/collect_data.py --save-video --dataset datasets/demo.zarr
+
+断点续采
+--------
+``--episodes`` 含义是 **目标总数** 而非"再采 N 个"。
+例如 ``--episodes 30`` 表示这个数据集总共需要 30 个 episode：
+  - 数据集不存在 → 新建，采 30 个
+  - 已有 12 个    → 自动算出还差 18 个，只采 18 个
+  - 已有 ≥ 30 个  → 打印提示直接退出
+同一个命令反复跑就行，中途 Ctrl+C 也不会丢失已保存的数据。
+
+键盘控制
+--------
+  Space   — 开始录制当前 episode
+  Enter   — 结束当前 episode
+  Ctrl+C  — 优雅退出（已保存的 episode 完好）
+
+SpaceMouse
+----------
+  6D 移动    — 控制机械臂末端
+  左键(btn0) — 张开夹爪
+  右键(btn1) — 关闭夹爪
 """
 
 from __future__ import annotations
 
 import argparse
+import os
+
+import numpy as np
+import zarr
 
 from xarm_toolkit.env.xarm_env import XArmEnv
 from xarm_toolkit.env.realsense_env import RealsenseEnv
@@ -47,9 +69,9 @@ def parse_args():
     p.add_argument("--dataset", type=str, default="datasets/demo.zarr",
                    help="Zarr dataset path")
     p.add_argument("--episodes", type=int, default=3,
-                   help="Number of episodes to collect")
+                   help="目标 episode 总数（断点续采：已有 N 个则只采 episodes-N 个）")
 
-    # 任务参数（替代 configs/tasks/*.yaml）
+    # 任务参数
     p.add_argument("--start-bias", type=float, nargs=3, default=[0, 0, 0],
                    metavar=("X", "Y", "Z"),
                    help="Initial position offset from Home [x, y, z] in mm (default: 0 0 0)")
@@ -94,6 +116,33 @@ def parse_args():
 def main():
     args = parse_args()
 
+    # --- 断点续采：计算剩余 episode 数 ---
+    existing_episodes = 0
+    if os.path.exists(args.dataset):
+        try:
+            ds = zarr.open(args.dataset, mode="r")
+            if "data" in ds and "episode" in ds["data"]:
+                existing_episodes = len(np.unique(ds["data"]["episode"][:]))
+        except Exception:
+            pass  # 无法读取，当作新建
+
+    remaining = args.episodes - existing_episodes
+
+    if remaining <= 0:
+        print(
+            f"\n✓ 数据集已有 {existing_episodes} episodes，"
+            f"已达到目标 {args.episodes}，无需继续采集。\n"
+            f"  路径: {args.dataset}\n"
+            f"  如需采集更多，请增大 --episodes 的值。\n"
+        )
+        return
+
+    if existing_episodes > 0:
+        logger.info(
+            "断点续采: 已有 %d episodes, 目标 %d, 本次采集 %d",
+            existing_episodes, args.episodes, remaining,
+        )
+
     # --- Build task config from CLI args ---
     task_cfg = {
         "start_bias": args.start_bias,
@@ -125,11 +174,6 @@ def main():
     agent = SpacemouseAgent(config=sm_cfg)
 
     # --- Run collector ---
-    logger.info(
-        "Episodes: %d | Force: %s | Cam: %s | Bias: %s | Dataset: %s",
-        args.episodes, args.force, cam_mode, args.start_bias, args.dataset,
-    )
-
     collector = Collector(
         env=env,
         cam_arm=cam_arm,
@@ -137,7 +181,7 @@ def main():
         agent=agent,
         dataset_path=args.dataset,
         task_config=task_cfg,
-        num_episodes=args.episodes,
+        num_episodes=remaining,
         cam_mode=cam_mode,
         image_size=tuple(args.image_size),
         save_video=args.save_video,
