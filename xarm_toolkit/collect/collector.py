@@ -68,7 +68,7 @@ def _open_or_create_zarr(
 
     if exists:
         logger.info("Opening existing dataset: %s", dataset_path)
-        ds = zarr.open(dataset_path, "a")
+        ds = zarr.open(dataset_path, mode="a")
         data = ds["data"]
         meta = ds["meta"]
         if "episode" in data:
@@ -79,7 +79,7 @@ def _open_or_create_zarr(
         return data, meta, start_ep
 
     logger.info("Creating new dataset: %s (cam_mode=%s)", dataset_path, cam_mode)
-    ds = zarr.open(dataset_path, "w")
+    ds = zarr.open(dataset_path, mode="w")
     data = ds.create_group("data")
     meta = ds.create_group("meta")
 
