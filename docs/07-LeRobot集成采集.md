@@ -1,4 +1,5 @@
 # LeRobot 集成：XArm6 + SpaceMouse 数据采集
+## 本文档经过测试，代码无误，但是太卡了，不好用
 
 > 本文档覆盖：LeRobot 插件安装、SpaceMouse 遥操作采集、CLI 参数详解、数据格式说明、与原有 Zarr 采集的对比。
 
