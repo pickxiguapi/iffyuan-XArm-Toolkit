@@ -7,13 +7,17 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from xarm_toolkit.deploy.client import VLAClient
+    from xarm_toolkit.deploy.openpi_server import Pi05XArmPolicy
+    from xarm_toolkit.deploy.robot_deploy import XArmDeployer
     from xarm_toolkit.deploy.server import VLAServer
 
-__all__ = ["VLAClient", "VLAServer"]
+__all__ = ["VLAClient", "VLAServer", "Pi05XArmPolicy", "XArmDeployer"]
 
 _LAZY_IMPORTS: dict[str, str] = {
     "VLAClient": "xarm_toolkit.deploy.client",
     "VLAServer": "xarm_toolkit.deploy.server",
+    "Pi05XArmPolicy": "xarm_toolkit.deploy.openpi_server",
+    "XArmDeployer": "xarm_toolkit.deploy.robot_deploy",
 }
 
 

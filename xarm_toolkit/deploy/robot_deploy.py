@@ -1,0 +1,208 @@
+"""Robot-side VLA deployment loop for XArm6.
+
+Wraps XArmEnv + dual RealSense cameras + VLAClient into a single class that
+runs the deploy control loop.
+
+Usage::
+
+    from xarm_toolkit.deploy.robot_deploy import XArmDeployer
+
+    deployer = XArmDeployer(
+        server_host="192.168.1.100",
+        instruction="pick up the orange toy and place it to the plate",
+    )
+    deployer.run()
+"""
+
+from __future__ import annotations
+
+import time
+
+import numpy as np
+
+from xarm_toolkit.deploy.client import VLAClient
+from xarm_toolkit.env.realsense_env import RealsenseEnv
+from xarm_toolkit.env.xarm_env import XArmEnv, ActionMode
+from xarm_toolkit.utils.logger import get_logger
+
+logger = get_logger("xarm_toolkit.deploy.robot_deploy")
+
+# Hardware defaults
+CAM_ARM_SERIAL = "327122075644"   # D435i (arm-mounted / wrist)
+CAM_FIX_SERIAL = "f1271506"       # L515 (fixed / base)
+GRIPPER_MAX = 840
+GRIPPER_THRESHOLD = 420  # 与 Collector 一致的二值阈值
+
+
+def build_state(obs: dict) -> np.ndarray:
+    """Build 7-dim state: goal_pos(6) + gripper_binary(1).
+
+    与 Collector 采集时完全一致：
+    - pos = ``goal_pos``（commanded 目标位姿，非 cart_pos 反馈）
+    - gripper = 二值 0/1（≤420 → 0 闭合, >420 → 1 张开）  
+
+    Parameters
+    ----------
+    obs : dict
+        XArmEnv observation containing ``goal_pos`` (6,) and
+        ``gripper_position`` (raw 0-840).
+
+    Returns
+    -------
+    np.ndarray
+        Shape (7,), float32.
+    """
+    goal_pos = np.asarray(obs["goal_pos"], dtype=np.float32)
+    gripper_raw = float(obs.get("gripper_position", 0))
+    gripper_binary = 0.0 if gripper_raw <= GRIPPER_THRESHOLD else 1.0
+    return np.concatenate([goal_pos, [gripper_binary]], dtype=np.float32)
+
+
+def _ensure_hwc(rgb: np.ndarray) -> np.ndarray:
+    """Ensure image is HWC uint8."""
+    if rgb.ndim == 3 and rgb.shape[0] == 3:
+        rgb = np.transpose(rgb, (1, 2, 0))
+    return rgb.astype(np.uint8)
+
+
+class XArmDeployer:
+    """End-to-end deployment: VLAClient + XArmEnv + cameras.
+
+    Parameters
+    ----------
+    server_host : str
+        VLA inference server hostname / IP.
+    server_port : int
+        VLA inference server port.
+    instruction : str
+        Language instruction for the task.
+    arm_ip : str
+        XArm controller IP.
+    action_mode : ActionMode
+        How to interpret the model's action output.
+    max_steps : int
+        Maximum steps per episode.
+    hz : float
+        Control frequency.
+    use_force : bool
+        Enable force control mode on XArmEnv.
+    cam_arm_serial : str
+        Arm-mounted camera serial.
+    cam_fix_serial : str
+        Fixed camera serial.
+    """
+
+    def __init__(
+        self,
+        server_host: str = "localhost",
+        server_port: int = 10093,
+        instruction: str = "",
+        arm_ip: str = "192.168.31.232",
+        action_mode: ActionMode = "delta_eef",
+        max_steps: int = 800,
+        hz: float = 10.0,
+        use_force: bool = False,
+        cam_arm_serial: str = CAM_ARM_SERIAL,
+        cam_fix_serial: str = CAM_FIX_SERIAL,
+    ):
+        self.instruction = instruction
+        self.max_steps = max_steps
+        self.dt = 1.0 / hz
+        self.hz = hz
+        self.action_mode = action_mode
+
+        # ---- Hardware ----
+        logger.info("Initializing XArm environment ...")
+        self.env = XArmEnv(
+            addr=arm_ip,
+            action_mode=action_mode,
+            use_force=use_force,
+        )
+
+        logger.info("Initializing cameras ...")
+        self.cam_arm = RealsenseEnv(serial=cam_arm_serial, mode="rgb")
+        self.cam_fix = RealsenseEnv(serial=cam_fix_serial, mode="rgb")
+
+        # ---- VLA client ----
+        logger.info("Connecting to VLA server at %s:%d ...", server_host, server_port)
+        self.client = VLAClient(host=server_host, port=server_port)
+
+        if not self.client.ping():
+            raise ConnectionError("VLA server ping failed!")
+        logger.info("Server connected. Metadata: %s", self.client.metadata)
+
+    def run(self):
+        """Run the deployment control loop (blocking)."""
+        # Reset
+        obs = self.env.reset(close_gripper=False)
+        logger.info("Robot reset. Starting deployment loop ...")
+        logger.info("Instruction: %s", self.instruction)
+        logger.info(
+            "Action mode: %s, Hz: %.1f, Max steps: %d",
+            self.action_mode, self.hz, self.max_steps,
+        )
+
+        try:
+            for step_i in range(self.max_steps):
+                t0 = time.monotonic()
+
+                # ---- Capture images (HWC uint8) ----
+                rgb_arm = _ensure_hwc(self.cam_arm.step()["rgb"])   # wrist
+                rgb_fix = _ensure_hwc(self.cam_fix.step()["rgb"])   # base
+
+                # ---- Build state: cart_pos(6) + gripper(1) ----
+                state = build_state(obs)
+
+                # ---- Inference ----
+                result = self.client.predict(
+                    images=[rgb_arm, rgb_fix],
+                    instruction=self.instruction,
+                    state=state,
+                )
+
+                actions = result.get("actions")
+                if actions is None:
+                    logger.warning("No actions returned at step %d", step_i)
+                    continue
+
+                # ---- Execute action ----
+                # actions shape: (chunk_size, 7) — 取第一个 action
+                action = actions[0] if actions.ndim > 1 else actions
+
+                # 前 6 维: delta EEF [dx, dy, dz, dr, dp, dy]
+                arm_action = action[:6]
+                # 第 7 维: gripper 二值 (与训练数据一致: >=0.5 → 840 张开, <0.5 → 0 闭合)
+                gripper_action = None
+                if len(action) > 6:
+                    gripper_action = GRIPPER_MAX if float(action[6]) >= 0.5 else 0
+
+                obs = self.env.step(
+                    action=arm_action,
+                    gripper_action=gripper_action,
+                )
+
+                # ---- Rate control ----
+                elapsed = time.monotonic() - t0
+                if elapsed < self.dt:
+                    time.sleep(self.dt - elapsed)
+
+                if step_i % 10 == 0:
+                    logger.info(
+                        "Step %d/%d  elapsed=%.3fs  pos=%s  gripper=%.2f",
+                        step_i, self.max_steps, elapsed,
+                        np.array2string(obs["cart_pos"][:3], precision=1),
+                        state[-1],
+                    )
+
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user.")
+        finally:
+            self.cleanup()
+
+    def cleanup(self):
+        """Release all resources."""
+        self.client.close()
+        self.env.cleanup()
+        self.cam_arm.cleanup()
+        self.cam_fix.cleanup()
+        logger.info("Deployer cleaned up.")
