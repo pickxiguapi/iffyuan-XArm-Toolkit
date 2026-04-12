@@ -47,8 +47,9 @@ def build_state(obs: dict) -> np.ndarray:
     return np.concatenate([goal_pos, [gripper_binary]], dtype=np.float32)
 
 
-def ensure_hwc(rgb: np.ndarray) -> np.ndarray:
-    """确保图像为 HWC uint8."""
+def ensure_hwc(rgb) -> np.ndarray:
+    """确保图像为 HWC uint8（兼容 Open3D Image 和 numpy array）."""
+    rgb = np.asarray(rgb)
     if rgb.ndim == 3 and rgb.shape[0] == 3:
         rgb = np.transpose(rgb, (1, 2, 0))
     return rgb.astype(np.uint8)
